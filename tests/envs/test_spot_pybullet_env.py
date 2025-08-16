@@ -158,9 +158,6 @@ def test_spot_pybullet_place():
     sim.step(Pick("purple block", side_grasp))
     sim.step(Place("table", good_placement_pose))
 
-    # It should be possible to place on the floor.
-    # TODO
-
     # It should be impossible to place at a far-away pose.
     far_pose = Pose((1000, 1000, 0), init_block_pose.orientation)
     sim.reset(seed=123)
