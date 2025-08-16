@@ -10,6 +10,7 @@ from pybullet_helpers.geometry import Pose, set_pose,multiply_poses
 from pybullet_helpers.gui import create_gui_connection
 from pybullet_helpers.robots import create_pybullet_robot
 from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
+from pybullet_helpers.inverse_kinematics import check_collisions_with_held_object
 from pybullet_helpers.utils import create_pybullet_block
 
 ObsType: TypeAlias = Any  # coming soon
@@ -163,8 +164,11 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         )
 
         # Create held object and transform.
-        self._current_held_object: str | None = None
+        self._current_held_object_id: int | None = None
         self._current_held_object_transform: Pose | None = None
+
+        # Designate obstacles.
+        self.obstacle_ids = {self.block_id, self.table_id}
 
     def reset(
         self,
@@ -195,19 +199,25 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
     ) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
 
         if isinstance(action, MoveBase):
-            # TODO: check collisions
+            # Store the current robot pose in case we need to change it back.
+            current_robot_base_pose = self.robot.get_base_pose()
+            # Tentatively update the base pose.
             self.robot.set_base(action.pose)
+            # Check for collisions.
+            if self._collision_exists():
+                if self.raise_error_on_action_failures:
+                    raise ActionFailure("Robot in collision")
+                self.robot.set_base(current_robot_base_pose)
 
         elif isinstance(action, Pick):
             # TODO: check gaze and reachability and hand empty
-            self._current_held_object = action.object_name
+            self._current_held_object_id = self._object_name_to_id(self._current_held_object)
             self._current_held_object_transform = self.scene_description.end_effector_to_grasp_pose
 
         elif isinstance(action, HandOver):
             # TODO check reachability and held object
-            assert self._current_held_object is not None
-            current_held_object_id = self._object_name_to_id(self._current_held_object)
-            set_pose(current_held_object_id, BANISH_POSE, self.physics_client_id)
+            assert self._current_held_object_id is not None
+            set_pose(self._current_held_object_id, BANISH_POSE, self.physics_client_id)
             self._current_held_object = None
             self._current_held_object_transform = None
             
@@ -215,15 +225,14 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
             raise NotImplementedError
 
         # Apply held object transform.
-        if self._current_held_object is not None:
+        if self._current_held_object_id is not None:
             assert self._current_held_object_transform is not None
-            current_held_object_id = self._object_name_to_id(self._current_held_object)
             world_to_robot = self.robot.get_end_effector_pose()
             world_to_object = multiply_poses(
                 world_to_robot, self._current_held_object_transform
             )
             set_pose(
-                current_held_object_id,
+                self._current_held_object_id,
                 world_to_object,
                 self.physics_client_id,
             )
@@ -239,3 +248,14 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
             return self.block_id
         raise NotImplementedError
 
+    def _collision_exists(self) -> bool:
+        """Check for collisions between the robot (and held object) and obstacles."""
+        collision_bodies = set(self.obstacle_ids)
+        if self._current_held_object_id is not None:
+            collision_bodies.discard(self._current_held_object_id)
+        return check_collisions_with_held_object(self.robot, collision_bodies,
+                                          self.physics_client_id,
+                                          self._current_held_object,
+                                          self._current_held_object_transform,
+                                          self.robot.get_joint_positions()
+                                          )
