@@ -57,5 +57,6 @@ exclude = ["venv/*", ".venv/*"]
 [[tool.mypy.overrides]]
 module = [
     "matplotlib.*",
+    "pybullet.*",
 ]
 ignore_missing_imports = true

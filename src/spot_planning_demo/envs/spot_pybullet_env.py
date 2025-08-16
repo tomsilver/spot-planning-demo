@@ -1,15 +1,15 @@
 """PyBullet simulator and environment for Spot."""
 
+from dataclasses import dataclass
 from typing import Any, SupportsFloat, TypeAlias
-from pybullet_helpers.gui import create_gui_connection
+
+import gymnasium
 import pybullet as p
 from pybullet_helpers.geometry import Pose, set_pose
+from pybullet_helpers.gui import create_gui_connection
 from pybullet_helpers.robots import create_pybullet_robot
 from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
 from pybullet_helpers.utils import create_pybullet_block
-from dataclasses import dataclass
-
-import gymnasium
 
 ObsType: TypeAlias = Any  # coming soon
 ActType: TypeAlias = Any  # coming soon
@@ -35,12 +35,29 @@ class SpotPybulletSimSpec:
 
     # Block.
     block_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.025)
-    block_init_pose: Pose = Pose((
-        table_pose.position[0] - table_half_extents[0] / 2,
-        table_pose.position[1],
-        table_pose.position[2] + table_half_extents[2] + block_half_extents[2],
-    ))
-    block_color: tuple[float, float, float] = (170 / 255, 121 / 255, 222 / 255, 1.0)
+    block_init_pose: Pose = Pose(
+        (
+            table_pose.position[0] - table_half_extents[0] / 2,
+            table_pose.position[1],
+            table_pose.position[2] + table_half_extents[2] + block_half_extents[2],
+        )
+    )
+    block_color: tuple[float, float, float, float] = (
+        170 / 255,
+        121 / 255,
+        222 / 255,
+        1.0,
+    )
+
+    # Drop zone.
+    drop_zone_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.025)
+    drop_zone_pose: Pose = Pose((-0.75, -0.75, 0.5))
+    drop_zone_color: tuple[float, float, float, float] = (
+        255 / 255,
+        121 / 255,
+        255 / 255,
+        0.5,
+    )
 
     def get_camera_kwargs(self) -> dict[str, Any]:
         """Derived kwargs for taking images."""
@@ -48,7 +65,7 @@ class SpotPybulletSimSpec:
             "camera_target": (
                 self.robot_base_pose.position[0],
                 self.robot_base_pose.position[1],
-                self.robot_base_pose.position[2] + 0.5
+                self.robot_base_pose.position[2] + 0.5,
             ),
             "camera_yaw": 0,
             "camera_distance": 1.5,
@@ -65,10 +82,12 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, ActType]):
 
     metadata = {"render_modes": ["rgb_array"], "render_fps": 20}
 
-    def __init__(self,
-                 scene_description: SpotPybulletSimSpec | None = SpotPybulletSimSpec(),
-                 render_mode: str | None = "rgb_array",
-        use_gui: bool = False):
+    def __init__(
+        self,
+        scene_description: SpotPybulletSimSpec = SpotPybulletSimSpec(),
+        render_mode: str | None = "rgb_array",
+        use_gui: bool = False,
+    ):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
         self.scene_description = scene_description
@@ -97,7 +116,9 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, ActType]):
             self.scene_description.floor_half_extents,
             self.physics_client_id,
         )
-        set_pose(self.floor_id, self.scene_description.floor_pose, self.physics_client_id)
+        set_pose(
+            self.floor_id, self.scene_description.floor_pose, self.physics_client_id
+        )
 
         # Create table.
         self.table_id = create_pybullet_block(
@@ -105,7 +126,9 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, ActType]):
             self.scene_description.table_half_extents,
             self.physics_client_id,
         )
-        set_pose(self.table_id, self.scene_description.table_pose, self.physics_client_id)
+        set_pose(
+            self.table_id, self.scene_description.table_pose, self.physics_client_id
+        )
 
         # Create block.
         self.block_id = create_pybullet_block(
@@ -113,9 +136,23 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, ActType]):
             self.scene_description.block_half_extents,
             self.physics_client_id,
         )
-        set_pose(self.block_id, self.scene_description.block_init_pose, self.physics_client_id)
+        set_pose(
+            self.block_id,
+            self.scene_description.block_init_pose,
+            self.physics_client_id,
+        )
 
-
+        # Create drop zone.
+        self.drop_zone_id = create_pybullet_block(
+            self.scene_description.drop_zone_color,
+            self.scene_description.drop_zone_half_extents,
+            self.physics_client_id,
+        )
+        set_pose(
+            self.drop_zone_id,
+            self.scene_description.drop_zone_pose,
+            self.physics_client_id,
+        )
 
     def reset(
         self,
