@@ -413,6 +413,8 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
     def _object_name_to_id(self, name: str) -> int:
         if name == "purple block":
             return self.purple_block_id
+        if name == "green block":
+            return self.green_block_id
         raise NotImplementedError
 
     def _collision_exists(self, ignore_ids: set[int] | None = None) -> bool:

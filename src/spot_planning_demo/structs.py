@@ -27,6 +27,14 @@ class Pick(SpotAction):
 
 
 @dataclass(frozen=True)
+class Place(SpotAction):
+    """Place a held object onto a surface."""
+
+    surface_name: str  # unique object name
+    end_effector_placement_pose: Pose  # relative to robot shoulder (not surface)
+
+
+@dataclass(frozen=True)
 class HandOver(SpotAction):
     """Pick an object."""
 
