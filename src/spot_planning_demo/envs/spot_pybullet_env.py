@@ -3,9 +3,10 @@
 from typing import Any, SupportsFloat, TypeAlias
 from pybullet_helpers.gui import create_gui_connection
 import pybullet as p
-from pybullet_helpers.geometry import Pose
+from pybullet_helpers.geometry import Pose, set_pose
 from pybullet_helpers.robots import create_pybullet_robot
 from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
+from pybullet_helpers.utils import create_pybullet_block
 from dataclasses import dataclass
 
 import gymnasium
@@ -19,7 +20,18 @@ RenderFrame: TypeAlias = Any  # coming soon
 class SpotPybulletSimSpec:
     """Scene description forSpotPyBulletSim()."""
 
+    # Robot.
     robot_base_pose: Pose = Pose.identity()
+
+    # Floor.
+    floor_color: tuple[float, float, float, float] = (0.3, 0.3, 0.3, 1.0)
+    floor_half_extents: tuple[float, float, float] = (3, 3, 0.001)
+    floor_pose: Pose = Pose((0, 0, -floor_half_extents[2]))
+
+    # Table.
+    table_half_extents: tuple[float, float, float] = (0.3, 0.4, 0.3)
+    table_pose: Pose = Pose((0.9, 0.0, table_half_extents[2]))
+    table_color: tuple[float, float, float, float] = (0.6, 0.3, 0.1, 1.0)
 
     def get_camera_kwargs(self) -> dict[str, Any]:
         """Derived kwargs for taking images."""
@@ -69,6 +81,24 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, ActType]):
         assert isinstance(robot, FingeredSingleArmPyBulletRobot)
         robot.close_fingers()
         self.robot = robot
+
+        # Create floor.
+        self.floor_id = create_pybullet_block(
+            self.scene_description.floor_color,
+            self.scene_description.floor_half_extents,
+            self.physics_client_id,
+        )
+        set_pose(self.floor_id, self.scene_description.floor_pose, self.physics_client_id)
+
+        # Create table.
+        self.table_id = create_pybullet_block(
+            self.scene_description.table_color,
+            self.scene_description.table_half_extents,
+            self.physics_client_id,
+        )
+        set_pose(self.table_id, self.scene_description.table_pose, self.physics_client_id)
+
+
 
     def reset(
         self,
