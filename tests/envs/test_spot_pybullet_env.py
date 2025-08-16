@@ -74,9 +74,15 @@ def test_spot_pybullet_pick():
     sim.step(Pick("block", Pose.from_rpy((0, 0, 0.1), (0, np.pi, 0))))
     assert sim._current_held_object_id is not None  # pylint: disable=protected-access
 
-    # Picking the block from further back should not be possible.
+    # Picking from the origin with a side grasp should also be possible.
     sim.reset(seed=123)
-    sim.robot.set_base(Pose((-1.0, 0.0, 0.0)))
+    sim.robot.set_base(Pose.identity())
+    sim.step(Pick("block", Pose.from_rpy((0, 0, 0.1), (-np.pi / 2, -np.pi / 2, 0))))
+    assert sim._current_held_object_id is not None  # pylint: disable=protected-access
+
+    # Picking the block from further back should not be possible.
+    # sim.reset(seed=123)
+    # sim.robot.set_base(Pose((-1.0, 0.0, 0.0)))
 
     # Uncomment to debug.
     # import pybullet as p
@@ -108,13 +114,13 @@ def test_spot_pybullet_handover():
         init_block_pose.orientation,
     )
     sim.robot.set_base(Pose.identity())
-    sim.step(Pick("block", Pose.from_rpy((0, 0, 0.1), (0, np.pi, 0))))
+    sim.step(Pick("block", Pose.from_rpy((0, 0, 0.1), (-np.pi / 2, -np.pi / 2, 0))))
     sim.step(HandOver(good_handover_pose))
 
     # It should be impossible to hand over to a far-away pose.
     far_pose = Pose((1000, 1000, 0))
     sim.reset(seed=123)
     sim.robot.set_base(Pose.identity())
-    sim.step(Pick("block", Pose.from_rpy((0, 0, 0.1), (0, np.pi, 0))))
+    sim.step(Pick("block", Pose.from_rpy((0, 0, 0.1), (-np.pi / 2, -np.pi / 2, 0))))
     with pytest.raises(ActionFailure):
         sim.step(HandOver(far_pose))

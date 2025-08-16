@@ -42,18 +42,18 @@ class SpotPybulletSimSpec:
 
     # Table.
     table_half_extents: tuple[float, float, float] = (0.3, 0.4, 0.3)
-    table_pose: Pose = Pose((0.9, 0.0, table_half_extents[2]))
+    table_pose: Pose = Pose((1.0, 0.0, table_half_extents[2]))
     table_color: tuple[float, float, float, float] = (0.6, 0.3, 0.1, 1.0)
 
     # TODO: add a ceiling above the table to force side grasp (and then later,
     # force moving obstacle out of the way)
 
     # Block.
-    block_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.025)
+    block_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.05)
     block_init_pose: Pose = Pose(
         (
             table_pose.position[0] - table_half_extents[0] / 2,
-            table_pose.position[1],
+            table_pose.position[1] - table_half_extents[1] / 2,
             table_pose.position[2] + table_half_extents[2] + block_half_extents[2],
         )
     )
