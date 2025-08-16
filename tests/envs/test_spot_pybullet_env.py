@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from pybullet_helpers.geometry import Pose, get_pose
+from pybullet_helpers.geometry import Pose, get_pose, set_pose
 
 from spot_planning_demo.envs.spot_pybullet_env import ActionFailure, SpotPyBulletSim
 from spot_planning_demo.structs import HandOver, MoveBase, Pick
@@ -19,7 +19,7 @@ def test_spot_pybullet_sim():
     # Test a sequence of actions.
     side_grasp = Pose.from_rpy((0, 0, 0.1), (-np.pi / 2, -np.pi / 2, 0))
     action_sequence = [
-        Pick("block", side_grasp),
+        Pick("purple block", side_grasp),
         MoveBase(Pose.from_rpy((-1.0, 0.0, 0.0), (0.0, 0.0, -np.pi / 2))),
         HandOver(drop_zone_pose),
     ]
@@ -74,14 +74,14 @@ def test_spot_pybullet_pick():
     side_grasp = Pose.from_rpy((0, 0, 0.1), (-np.pi / 2, -np.pi / 2, 0))
     top_grasp = Pose.from_rpy((0, 0, 0.1), (0, np.pi, 0))
     sim.robot.set_base(Pose.identity())
-    sim.step(Pick("block", side_grasp))
+    sim.step(Pick("purple block", side_grasp))
     assert sim._current_held_object_id is not None  # pylint: disable=protected-access
 
     # Picking from the origin with a top grasp should not be possible.
     sim.reset(seed=123)
     sim.robot.set_base(Pose.identity())
     with pytest.raises(ActionFailure):
-        sim.step(Pick("block", top_grasp))
+        sim.step(Pick("purple block", top_grasp))
 
     # Picking the block from further back should not be possible.
     sim.reset(seed=123)
@@ -95,7 +95,23 @@ def test_spot_pybullet_pick():
     #     p.getMouseEvents(sim.physics_client_id)
 
     with pytest.raises(ActionFailure):
-        sim.step(Pick("block", side_grasp))
+        sim.step(Pick("purple block", side_grasp))
+
+    # Picking the purple block should not be possible if the green block is in front.
+    sim.reset(seed=123)
+    sim.robot.set_base(Pose.identity())
+    purple_block_pose = get_pose(sim.purple_block_id, sim.physics_client_id)
+    obstructing_pose = Pose(
+        (
+            purple_block_pose.position[0] - 0.1,
+            purple_block_pose.position[1],
+            purple_block_pose.position[2],
+        ),
+        purple_block_pose.orientation,
+    )
+    set_pose(sim.green_block_id, obstructing_pose, sim.physics_client_id)
+    with pytest.raises(ActionFailure):
+        sim.step(Pick("purple block", side_grasp))
 
 
 def test_spot_pybullet_handover():
@@ -108,7 +124,7 @@ def test_spot_pybullet_handover():
 
     # It should be possible to hand over back to the pose where the block started, with
     # a little bit of padding added to avoid issues with table collisions.
-    init_block_pose = get_pose(sim.block_id, sim.physics_client_id)
+    init_block_pose = get_pose(sim.purple_block_id, sim.physics_client_id)
     good_handover_pose = Pose(
         (
             init_block_pose.position[0],
@@ -118,13 +134,13 @@ def test_spot_pybullet_handover():
         init_block_pose.orientation,
     )
     sim.robot.set_base(Pose.identity())
-    sim.step(Pick("block", side_grasp))
+    sim.step(Pick("purple block", side_grasp))
     sim.step(HandOver(good_handover_pose))
 
     # It should be impossible to hand over to a far-away pose.
     far_pose = Pose((1000, 1000, 0))
     sim.reset(seed=123)
     sim.robot.set_base(Pose.identity())
-    sim.step(Pick("block", side_grasp))
+    sim.step(Pick("purple block", side_grasp))
     with pytest.raises(ActionFailure):
         sim.step(HandOver(far_pose))
