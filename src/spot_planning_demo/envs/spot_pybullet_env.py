@@ -13,7 +13,11 @@ from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
 from pybullet_helpers.utils import create_pybullet_block
 
 ObsType: TypeAlias = Any  # coming soon
-RenderFrame: TypeAlias = Any  # coming soon
+RenderFrame: TypeAlias = Any
+
+
+class ActionFailure(BaseException):
+    """Raised in step() if raise_error_on_action_failures=True."""
 
 
 @dataclass(frozen=True)
@@ -88,10 +92,12 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         scene_description: SpotPybulletSimSpec = SpotPybulletSimSpec(),
         render_mode: str | None = "rgb_array",
         use_gui: bool = False,
+        raise_error_on_action_failures: bool = False,
     ):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
         self.scene_description = scene_description
+        self.raise_error_on_action_failures = raise_error_on_action_failures
 
         # Create the PyBullet client.
         if use_gui:
