@@ -4,10 +4,15 @@ from dataclasses import dataclass
 from typing import Any, SupportsFloat, TypeAlias
 
 import gymnasium
+import numpy as np
 import pybullet as p
-from pybullet_helpers.geometry import Pose, multiply_poses, set_pose
+from pybullet_helpers.geometry import Pose, get_pose, multiply_poses, set_pose
 from pybullet_helpers.gui import create_gui_connection
-from pybullet_helpers.inverse_kinematics import check_collisions_with_held_object
+from pybullet_helpers.inverse_kinematics import (
+    InverseKinematicsError,
+    check_collisions_with_held_object,
+    inverse_kinematics,
+)
 from pybullet_helpers.robots import create_pybullet_robot
 from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
 from pybullet_helpers.utils import create_pybullet_block
@@ -28,7 +33,7 @@ class SpotPybulletSimSpec:
 
     # Robot.
     robot_base_pose: Pose = Pose.identity()
-    end_effector_to_grasp_pose: Pose = Pose((0.2, 0.0, 0.0))
+    end_effector_to_grasp_pose: Pose = Pose.from_rpy((0, 0, 0), (0, np.pi, 0))
 
     # Floor.
     floor_color: tuple[float, float, float, float] = (0.3, 0.3, 0.3, 1.0)
@@ -87,7 +92,7 @@ class SpotPybulletSimSpec:
 class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
     """PyBullet simulator for Spot demo environment."""
 
-    metadata = {"render_modes": ["rgb_array"], "render_fps": 20}
+    metadata = {"render_modes": ["rgb_array"], "render_fps": 1}
 
     def __init__(
         self,
@@ -200,29 +205,13 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
     ) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
 
         if isinstance(action, MoveBase):
-            # Store the current robot pose in case we need to change it back.
-            current_robot_base_pose = self.robot.get_base_pose()
-            # Tentatively update the base pose.
-            self.robot.set_base(action.pose)
-            # Check for collisions.
-            if self._collision_exists():
-                if self.raise_error_on_action_failures:
-                    raise ActionFailure("Robot in collision")
-                self.robot.set_base(current_robot_base_pose)
+            self._step_move_base(action.pose)
 
         elif isinstance(action, Pick):
-            # TODO: check gaze and reachability and hand empty
-            self._current_held_object_id = self._object_name_to_id(action.object_name)
-            self._current_held_object_transform = (
-                self.scene_description.end_effector_to_grasp_pose
-            )
+            self._step_pick(action.object_name)
 
         elif isinstance(action, HandOver):
-            # TODO check reachability and held object
-            assert self._current_held_object_id is not None
-            set_pose(self._current_held_object_id, BANISH_POSE, self.physics_client_id)
-            self._current_held_object_id = None
-            self._current_held_object_transform = None
+            self._step_hand_over(action.pose)
 
         else:
             raise NotImplementedError
@@ -245,6 +234,88 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
     def render(self) -> RenderFrame | list[RenderFrame] | None:
         """Coming soon."""
         return None
+
+    def _step_move_base(self, new_pose: Pose) -> None:
+        # Store the current robot pose in case we need to change it back.
+        current_robot_base_pose = self.robot.get_base_pose()
+        # Tentatively update the base pose.
+        self.robot.set_base(new_pose)
+        # Check for collisions.
+        if self._collision_exists():
+            if self.raise_error_on_action_failures:
+                raise ActionFailure("Robot in collision")
+            self.robot.set_base(current_robot_base_pose)
+
+    def _step_pick(self, object_name: str) -> None:
+        # Can only pick if hand is empty.
+        if self._current_held_object_id is not None:
+            if self.raise_error_on_action_failures:
+                raise ActionFailure("Cannot pick while holding something")
+            return
+        # Can only pick if object is reachable.
+        # NOTE: currently assuming that reachable => gazeable.
+        # Run inverse kinematics to determine grasp joint positions.
+        object_id = self._object_name_to_id(object_name)
+        target_object_pose = get_pose(object_id, self.physics_client_id)
+        target_end_effector_pose = multiply_poses(
+            target_object_pose,
+            self.scene_description.end_effector_to_grasp_pose.invert(),
+        )
+        current_robot_joints = self.robot.get_joint_positions()
+        try:
+            inverse_kinematics(self.robot, target_end_effector_pose)
+        except InverseKinematicsError:
+            if self.raise_error_on_action_failures:
+
+                # Uncomment to debug.
+                # from pybullet_helpers.gui import visualize_pose
+                # current_ee = self.robot.get_end_effector_pose()
+                # visualize_pose(current_ee, self.physics_client_id)
+                # visualize_pose(target_end_effector_pose, self.physics_client_id)
+                # while True:
+                #     p.getMouseEvents(self.physics_client_id)
+
+                raise ActionFailure("Cannot reach pick target")
+            return
+        self.robot.set_joints(current_robot_joints)
+        # Pick succeeds.
+        self._current_held_object_id = object_id
+        self._current_held_object_transform = (
+            self.scene_description.end_effector_to_grasp_pose
+        )
+
+    def _step_hand_over(self, pose: Pose) -> None:
+        # Need to be holding something for handover to be possible.
+        if self._current_held_object_id is None:
+            if self.raise_error_on_action_failures:
+                raise ActionFailure("Cannot hand over when hand is empty")
+            return
+        # Check reachability. The pose is in the object space, so transform to ee.
+        target_end_effector_pose = multiply_poses(
+            pose,
+            self.scene_description.end_effector_to_grasp_pose.invert(),
+        )
+        current_robot_joints = self.robot.get_joint_positions()
+        try:
+            inverse_kinematics(self.robot, target_end_effector_pose)
+        except InverseKinematicsError:
+            if self.raise_error_on_action_failures:
+
+                # Uncomment to debug.
+                # from pybullet_helpers.gui import visualize_pose
+                # current_ee = self.robot.get_end_effector_pose()
+                # visualize_pose(current_ee, self.physics_client_id)
+                # visualize_pose(target_end_effector_pose, self.physics_client_id)
+                # while True:
+                #     p.getMouseEvents(self.physics_client_id)
+
+                raise ActionFailure("Cannot reach hand over target")
+            return
+        self.robot.set_joints(current_robot_joints)
+        # Hand over succeeds.
+        set_pose(self._current_held_object_id, BANISH_POSE, self.physics_client_id)
+        self._current_held_object_id = None
+        self._current_held_object_transform = None
 
     def _object_name_to_id(self, name: str) -> int:
         if name == "block":

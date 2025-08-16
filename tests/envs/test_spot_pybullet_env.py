@@ -10,7 +10,9 @@ from spot_planning_demo.structs import HandOver, MoveBase, Pick
 
 def test_spot_pybullet_sim():
     """Tests for SpotPyBulletSim()."""
-    sim = SpotPyBulletSim(use_gui=False)  # change use_gui to True for debugging
+    sim = SpotPyBulletSim(
+        use_gui=False, raise_error_on_action_failures=True
+    )  # change use_gui to True for debugging
     sim.reset(seed=123)
     drop_zone_pose = get_pose(sim.drop_zone_id, sim.physics_client_id)
 
@@ -58,3 +60,52 @@ def test_spot_pybullet_move_base():
     )
     with pytest.raises(ActionFailure):
         sim.step(move_into_table)
+
+
+def test_spot_pybullet_pick():
+    """Tests for Pick()."""
+    sim = SpotPyBulletSim(
+        use_gui=False, raise_error_on_action_failures=True
+    )  # change use_gui to True for debugging
+    sim.reset(seed=123)
+
+    # Picking the block from the origin should be possible.
+    sim.robot.set_base(Pose.identity())
+    sim.step(Pick("block"))
+    assert sim._current_held_object_id is not None  # pylint: disable=protected-access
+
+    # Picking the block from further back should not be possible.
+    sim.reset(seed=123)
+    sim.robot.set_base(Pose((-1.0, 0.0, 0.0)))
+
+    # Uncomment to debug.
+    # import pybullet as p
+    # from pybullet_helpers.gui import visualize_pose
+    # visualize_pose(Pose.identity(), sim.physics_client_id)
+    # while True:
+    #     p.getMouseEvents(sim.physics_client_id)
+
+    with pytest.raises(ActionFailure):
+        sim.step(Pick("block"))
+
+
+def test_spot_pybullet_handover():
+    """Tests for HandOver()."""
+    sim = SpotPyBulletSim(
+        use_gui=False, raise_error_on_action_failures=True
+    )  # change use_gui to True for debugging
+    sim.reset(seed=123)
+
+    # It should be possible to hand over back to the pose where the block started.
+    init_block_pose = get_pose(sim.block_id, sim.physics_client_id)
+    sim.robot.set_base(Pose.identity())
+    sim.step(Pick("block"))
+    sim.step(HandOver(init_block_pose))
+
+    # It should be impossible to hand over to a far-away pose.
+    far_pose = Pose((1000, 1000, 0))
+    sim.reset(seed=123)
+    sim.robot.set_base(Pose.identity())
+    sim.step(Pick("block"))
+    with pytest.raises(ActionFailure):
+        sim.step(HandOver(far_pose))
