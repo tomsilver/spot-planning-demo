@@ -23,6 +23,7 @@ class Pick(SpotAction):
     """Pick an object."""
 
     object_name: str  # unique object name
+    end_effector_to_grasp_pose: Pose
 
 
 @dataclass(frozen=True)
