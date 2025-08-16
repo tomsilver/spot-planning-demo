@@ -60,19 +60,39 @@ class SpotPybulletSimSpec:
     )
     shelf_ceiling_color: tuple[float, float, float, float] = (0.6, 0.3, 0.1, 0.5)
 
-    # Block.
-    block_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.05)
-    block_init_pose: Pose = Pose(
+    # Purple block.
+    purple_block_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.05)
+    purple_block_init_pose: Pose = Pose(
         (
             table_pose.position[0] - table_half_extents[0] / 2,
             table_pose.position[1] - table_half_extents[1] / 2,
-            table_pose.position[2] + table_half_extents[2] + block_half_extents[2],
+            table_pose.position[2]
+            + table_half_extents[2]
+            + purple_block_half_extents[2],
         )
     )
-    block_color: tuple[float, float, float, float] = (
+    purple_block_color: tuple[float, float, float, float] = (
         170 / 255,
         121 / 255,
         222 / 255,
+        1.0,
+    )
+
+    # Green block.
+    green_block_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.05)
+    green_block_init_pose: Pose = Pose(
+        (
+            table_pose.position[0] - table_half_extents[0] / 2,
+            table_pose.position[1] + table_half_extents[1] / 2,
+            table_pose.position[2]
+            + table_half_extents[2]
+            + green_block_half_extents[2],
+        )
+    )
+    green_block_color: tuple[float, float, float, float] = (
+        10 / 255,
+        222 / 255,
+        10 / 255,
         1.0,
     )
 
@@ -172,15 +192,27 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
             self.physics_client_id,
         )
 
-        # Create block.
+        # Create purple block.
         self.purple_block_id = create_pybullet_block(
-            self.scene_description.block_color,
-            self.scene_description.block_half_extents,
+            self.scene_description.purple_block_color,
+            self.scene_description.purple_block_half_extents,
             self.physics_client_id,
         )
         set_pose(
             self.purple_block_id,
-            self.scene_description.block_init_pose,
+            self.scene_description.purple_block_init_pose,
+            self.physics_client_id,
+        )
+
+        # Create green block.
+        self.green_block_id = create_pybullet_block(
+            self.scene_description.green_block_color,
+            self.scene_description.green_block_half_extents,
+            self.physics_client_id,
+        )
+        set_pose(
+            self.green_block_id,
+            self.scene_description.green_block_init_pose,
             self.physics_client_id,
         )
 
@@ -201,7 +233,12 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         self._current_held_object_transform: Pose | None = None
 
         # Designate obstacles.
-        self.obstacle_ids = {self.purple_block_id, self.table_id, self.shelf_ceiling_id}
+        self.obstacle_ids = {
+            self.purple_block_id,
+            self.green_block_id,
+            self.table_id,
+            self.shelf_ceiling_id,
+        }
 
     def reset(
         self,
@@ -214,10 +251,17 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         self.robot.set_base(self.scene_description.robot_base_pose)
         self.robot.close_fingers()
 
-        # Reset the block.
+        # Reset the purple block.
         set_pose(
             self.purple_block_id,
-            self.scene_description.block_init_pose,
+            self.scene_description.purple_block_init_pose,
+            self.physics_client_id,
+        )
+
+        # Reset the green block.
+        set_pose(
+            self.green_block_id,
+            self.scene_description.green_block_init_pose,
             self.physics_client_id,
         )
 
