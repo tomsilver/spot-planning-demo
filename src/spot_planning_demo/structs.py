@@ -1,19 +1,20 @@
 """Common data structures."""
 
 from dataclasses import dataclass
-from pybullet_helpers.geometry import Pose
 
+from pybullet_helpers.geometry import Pose
 
 BANISH_POSE = Pose((-10000, -10000, -10000))
 
 
 class SpotAction:
     """An executable action."""
-    
+
 
 @dataclass(frozen=True)
 class MoveBase(SpotAction):
     """An action representing moving the robot base."""
+
     pose: Pose  # absolute pose in world frame
 
 

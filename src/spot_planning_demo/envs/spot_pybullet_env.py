@@ -2,16 +2,17 @@
 
 from dataclasses import dataclass
 from typing import Any, SupportsFloat, TypeAlias
-from spot_planning_demo.structs import MoveBase, SpotAction, Pick, HandOver, BANISH_POSE
 
 import gymnasium
 import pybullet as p
-from pybullet_helpers.geometry import Pose, set_pose,multiply_poses
+from pybullet_helpers.geometry import Pose, multiply_poses, set_pose
 from pybullet_helpers.gui import create_gui_connection
+from pybullet_helpers.inverse_kinematics import check_collisions_with_held_object
 from pybullet_helpers.robots import create_pybullet_robot
 from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
-from pybullet_helpers.inverse_kinematics import check_collisions_with_held_object
 from pybullet_helpers.utils import create_pybullet_block
+
+from spot_planning_demo.structs import BANISH_POSE, HandOver, MoveBase, Pick, SpotAction
 
 ObsType: TypeAlias = Any  # coming soon
 RenderFrame: TypeAlias = Any
@@ -189,7 +190,7 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         )
 
         # Reset the held object and transform.
-        self._current_held_object = None
+        self._current_held_object_id = None
         self._current_held_object_transform = None
 
         return None, {}
@@ -211,16 +212,18 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
 
         elif isinstance(action, Pick):
             # TODO: check gaze and reachability and hand empty
-            self._current_held_object_id = self._object_name_to_id(self._current_held_object)
-            self._current_held_object_transform = self.scene_description.end_effector_to_grasp_pose
+            self._current_held_object_id = self._object_name_to_id(action.object_name)
+            self._current_held_object_transform = (
+                self.scene_description.end_effector_to_grasp_pose
+            )
 
         elif isinstance(action, HandOver):
             # TODO check reachability and held object
             assert self._current_held_object_id is not None
             set_pose(self._current_held_object_id, BANISH_POSE, self.physics_client_id)
-            self._current_held_object = None
+            self._current_held_object_id = None
             self._current_held_object_transform = None
-            
+
         else:
             raise NotImplementedError
 
@@ -242,7 +245,7 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
     def render(self) -> RenderFrame | list[RenderFrame] | None:
         """Coming soon."""
         return None
-    
+
     def _object_name_to_id(self, name: str) -> int:
         if name == "block":
             return self.block_id
@@ -253,9 +256,11 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         collision_bodies = set(self.obstacle_ids)
         if self._current_held_object_id is not None:
             collision_bodies.discard(self._current_held_object_id)
-        return check_collisions_with_held_object(self.robot, collision_bodies,
-                                          self.physics_client_id,
-                                          self._current_held_object,
-                                          self._current_held_object_transform,
-                                          self.robot.get_joint_positions()
-                                          )
+        return check_collisions_with_held_object(
+            self.robot,
+            collision_bodies,
+            self.physics_client_id,
+            self._current_held_object_id,
+            self._current_held_object_transform,
+            self.robot.get_joint_positions(),
+        )
