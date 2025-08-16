@@ -173,13 +173,13 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         )
 
         # Create block.
-        self.block_id = create_pybullet_block(
+        self.purple_block_id = create_pybullet_block(
             self.scene_description.block_color,
             self.scene_description.block_half_extents,
             self.physics_client_id,
         )
         set_pose(
-            self.block_id,
+            self.purple_block_id,
             self.scene_description.block_init_pose,
             self.physics_client_id,
         )
@@ -201,7 +201,7 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         self._current_held_object_transform: Pose | None = None
 
         # Designate obstacles.
-        self.obstacle_ids = {self.block_id, self.table_id, self.shelf_ceiling_id}
+        self.obstacle_ids = {self.purple_block_id, self.table_id, self.shelf_ceiling_id}
 
     def reset(
         self,
@@ -216,7 +216,7 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
 
         # Reset the block.
         set_pose(
-            self.block_id,
+            self.purple_block_id,
             self.scene_description.block_init_pose,
             self.physics_client_id,
         )
@@ -367,8 +367,8 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         )
 
     def _object_name_to_id(self, name: str) -> int:
-        if name == "block":
-            return self.block_id
+        if name == "purple block":
+            return self.purple_block_id
         raise NotImplementedError
 
     def _collision_exists(self, ignore_ids: set[int] | None = None) -> bool:
