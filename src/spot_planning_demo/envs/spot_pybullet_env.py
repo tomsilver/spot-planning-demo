@@ -2,17 +2,17 @@
 
 from dataclasses import dataclass
 from typing import Any, SupportsFloat, TypeAlias
+from spot_planning_demo.structs import MoveBase, SpotAction, Pick
 
 import gymnasium
 import pybullet as p
-from pybullet_helpers.geometry import Pose, set_pose
+from pybullet_helpers.geometry import Pose, set_pose,multiply_poses
 from pybullet_helpers.gui import create_gui_connection
 from pybullet_helpers.robots import create_pybullet_robot
 from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
 from pybullet_helpers.utils import create_pybullet_block
 
 ObsType: TypeAlias = Any  # coming soon
-ActType: TypeAlias = Any  # coming soon
 RenderFrame: TypeAlias = Any  # coming soon
 
 
@@ -22,6 +22,7 @@ class SpotPybulletSimSpec:
 
     # Robot.
     robot_base_pose: Pose = Pose.identity()
+    end_effector_to_grasp_pose: Pose = Pose((0.2, 0.0, 0.0))
 
     # Floor.
     floor_color: tuple[float, float, float, float] = (0.3, 0.3, 0.3, 1.0)
@@ -51,7 +52,7 @@ class SpotPybulletSimSpec:
 
     # Drop zone.
     drop_zone_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.025)
-    drop_zone_pose: Pose = Pose((-0.75, -0.75, 0.5))
+    drop_zone_pose: Pose = Pose((-0.75, -0.75, 0.75))
     drop_zone_color: tuple[float, float, float, float] = (
         255 / 255,
         121 / 255,
@@ -77,7 +78,7 @@ class SpotPybulletSimSpec:
         }
 
 
-class SpotPyBulletSim(gymnasium.Env[ObsType, ActType]):
+class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
     """PyBullet simulator for Spot demo environment."""
 
     metadata = {"render_modes": ["rgb_array"], "render_fps": 20}
@@ -103,6 +104,7 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, ActType]):
         robot = create_pybullet_robot(
             "spot",
             self.physics_client_id,
+            fixed_base=False,
             base_pose=self.scene_description.robot_base_pose,
             control_mode="reset",
         )
@@ -154,21 +156,72 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, ActType]):
             self.physics_client_id,
         )
 
+        # Create held object and transform.
+        self._current_held_object: str | None = None
+        self._current_held_object_transform: Pose | None = None
+
     def reset(
         self,
         *,
         seed: int | None = None,
         options: dict[str, Any] | None = None,
     ) -> tuple[ObsType, dict[str, Any]]:
-        """Coming soon."""
+
+        # Reset the robot.
+        self.robot.set_base(self.scene_description.robot_base_pose)
+        self.robot.close_fingers()
+
+        # Reset the block.
+        set_pose(
+            self.block_id,
+            self.scene_description.block_init_pose,
+            self.physics_client_id,
+        )
+
+        # Reset the held object and transform.
+        self._current_held_object = None
+        self._current_held_object_transform = None
+
         return None, {}
 
     def step(
-        self, action: ActType
+        self, action: SpotAction
     ) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
-        """Coming soon."""
+
+        if isinstance(action, MoveBase):
+            # TODO: check collisions
+            self.robot.set_base(action.pose)
+
+        elif isinstance(action, Pick):
+            # TODO: check gaze and reachability and hand empty
+            self._current_held_object = action.object_name
+            self._current_held_object_transform = self.scene_description.end_effector_to_grasp_pose
+            
+        else:
+            raise NotImplementedError
+
+        # Apply held object transform.
+        if self._current_held_object is not None:
+            assert self._current_held_object_transform is not None
+            current_held_object_id = self._object_name_to_id(self._current_held_object)
+            world_to_robot = self.robot.get_end_effector_pose()
+            world_to_object = multiply_poses(
+                world_to_robot, self._current_held_object_transform
+            )
+            set_pose(
+                current_held_object_id,
+                world_to_object,
+                self.physics_client_id,
+            )
+
         return None, 0.0, False, False, {}
 
     def render(self) -> RenderFrame | list[RenderFrame] | None:
         """Coming soon."""
         return None
+    
+    def _object_name_to_id(self, name: str) -> int:
+        if name == "block":
+            return self.block_id
+        raise NotImplementedError
+
