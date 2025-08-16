@@ -4,16 +4,28 @@ from dataclasses import dataclass
 from typing import Any, SupportsFloat, TypeAlias
 
 import gymnasium
+import numpy as np
 import pybullet as p
-from pybullet_helpers.geometry import Pose, set_pose
+from pybullet_helpers.geometry import Pose, get_pose, multiply_poses, set_pose
 from pybullet_helpers.gui import create_gui_connection
+from pybullet_helpers.inverse_kinematics import (
+    InverseKinematicsError,
+    check_collisions_with_held_object,
+    inverse_kinematics,
+    set_robot_joints_with_held_object,
+)
 from pybullet_helpers.robots import create_pybullet_robot
 from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
 from pybullet_helpers.utils import create_pybullet_block
 
+from spot_planning_demo.structs import BANISH_POSE, HandOver, MoveBase, Pick, SpotAction
+
 ObsType: TypeAlias = Any  # coming soon
-ActType: TypeAlias = Any  # coming soon
-RenderFrame: TypeAlias = Any  # coming soon
+RenderFrame: TypeAlias = Any
+
+
+class ActionFailure(BaseException):
+    """Raised in step() if raise_error_on_action_failures=True."""
 
 
 @dataclass(frozen=True)
@@ -22,6 +34,7 @@ class SpotPybulletSimSpec:
 
     # Robot.
     robot_base_pose: Pose = Pose.identity()
+    end_effector_to_grasp_pose: Pose = Pose.from_rpy((0, 0, 0.1), (0, np.pi, 0))
 
     # Floor.
     floor_color: tuple[float, float, float, float] = (0.3, 0.3, 0.3, 1.0)
@@ -51,7 +64,7 @@ class SpotPybulletSimSpec:
 
     # Drop zone.
     drop_zone_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.025)
-    drop_zone_pose: Pose = Pose((-0.75, -0.75, 0.5))
+    drop_zone_pose: Pose = Pose((-0.75, -0.75, 0.75))
     drop_zone_color: tuple[float, float, float, float] = (
         255 / 255,
         121 / 255,
@@ -77,20 +90,22 @@ class SpotPybulletSimSpec:
         }
 
 
-class SpotPyBulletSim(gymnasium.Env[ObsType, ActType]):
+class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
     """PyBullet simulator for Spot demo environment."""
 
-    metadata = {"render_modes": ["rgb_array"], "render_fps": 20}
+    metadata = {"render_modes": ["rgb_array"], "render_fps": 1}
 
     def __init__(
         self,
         scene_description: SpotPybulletSimSpec = SpotPybulletSimSpec(),
         render_mode: str | None = "rgb_array",
         use_gui: bool = False,
+        raise_error_on_action_failures: bool = False,
     ):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
         self.scene_description = scene_description
+        self.raise_error_on_action_failures = raise_error_on_action_failures
 
         # Create the PyBullet client.
         if use_gui:
@@ -103,6 +118,7 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, ActType]):
         robot = create_pybullet_robot(
             "spot",
             self.physics_client_id,
+            fixed_base=False,
             base_pose=self.scene_description.robot_base_pose,
             control_mode="reset",
         )
@@ -154,21 +170,191 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, ActType]):
             self.physics_client_id,
         )
 
+        # Create held object and transform.
+        self._current_held_object_id: int | None = None
+        self._current_held_object_transform: Pose | None = None
+
+        # Designate obstacles.
+        self.obstacle_ids = {self.block_id, self.table_id}
+
     def reset(
         self,
         *,
         seed: int | None = None,
         options: dict[str, Any] | None = None,
     ) -> tuple[ObsType, dict[str, Any]]:
-        """Coming soon."""
+
+        # Reset the robot.
+        self.robot.set_base(self.scene_description.robot_base_pose)
+        self.robot.close_fingers()
+
+        # Reset the block.
+        set_pose(
+            self.block_id,
+            self.scene_description.block_init_pose,
+            self.physics_client_id,
+        )
+
+        # Reset the held object and transform.
+        self._current_held_object_id = None
+        self._current_held_object_transform = None
+
         return None, {}
 
     def step(
-        self, action: ActType
+        self, action: SpotAction
     ) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
-        """Coming soon."""
+
+        if isinstance(action, MoveBase):
+            self._step_move_base(action.pose)
+
+        elif isinstance(action, Pick):
+            self._step_pick(action.object_name)
+
+        elif isinstance(action, HandOver):
+            self._step_hand_over(action.pose)
+
+        else:
+            raise NotImplementedError
+
+        # Apply held object transform.
+        if self._current_held_object_id is not None:
+            assert self._current_held_object_transform is not None
+            world_to_robot = self.robot.get_end_effector_pose()
+            world_to_object = multiply_poses(
+                world_to_robot, self._current_held_object_transform
+            )
+            set_pose(
+                self._current_held_object_id,
+                world_to_object,
+                self.physics_client_id,
+            )
+
         return None, 0.0, False, False, {}
 
     def render(self) -> RenderFrame | list[RenderFrame] | None:
         """Coming soon."""
         return None
+
+    def _step_move_base(self, new_pose: Pose) -> None:
+        # Store the current robot pose in case we need to change it back.
+        current_robot_base_pose = self.robot.get_base_pose()
+        # Tentatively update the base pose.
+        self.robot.set_base(new_pose)
+        # Check for collisions.
+        ignore_ids = (
+            {self._current_held_object_id} if self._current_held_object_id else set()
+        )
+        if self._collision_exists(ignore_ids=ignore_ids):
+            if self.raise_error_on_action_failures:
+                raise ActionFailure("Robot in collision")
+            self.robot.set_base(current_robot_base_pose)
+
+    def _step_pick(self, object_name: str) -> None:
+        # Can only pick if hand is empty.
+        if self._current_held_object_id is not None:
+            if self.raise_error_on_action_failures:
+                raise ActionFailure("Cannot pick while holding something")
+            return
+        # Can only pick if object is reachable.
+        # NOTE: currently assuming that reachable => gazeable.
+        # Run inverse kinematics to determine grasp joint positions.
+        object_id = self._object_name_to_id(object_name)
+        target_object_pose = get_pose(object_id, self.physics_client_id)
+        target_end_effector_pose = multiply_poses(
+            target_object_pose,
+            self.scene_description.end_effector_to_grasp_pose.invert(),
+        )
+        self._step_reach_end_effector_pose(
+            target_end_effector_pose, collision_ignore_ids={object_id}
+        )
+        # Pick succeeds.
+        self._current_held_object_id = object_id
+        self._current_held_object_transform = (
+            self.scene_description.end_effector_to_grasp_pose
+        )
+
+    def _step_hand_over(self, pose: Pose) -> None:
+        # Need to be holding something for handover to be possible.
+        if self._current_held_object_id is None:
+            if self.raise_error_on_action_failures:
+                raise ActionFailure("Cannot hand over when hand is empty")
+            return
+        # Check reachability. The pose is in the object space, so transform to ee.
+        target_end_effector_pose = multiply_poses(
+            pose,
+            self.scene_description.end_effector_to_grasp_pose.invert(),
+        )
+        self._step_reach_end_effector_pose(
+            target_end_effector_pose,
+            collision_ignore_ids={self._current_held_object_id},
+        )
+        # Hand over succeeds.
+        set_pose(self._current_held_object_id, BANISH_POSE, self.physics_client_id)
+        self._current_held_object_id = None
+        self._current_held_object_transform = None
+
+    def _step_reach_end_effector_pose(
+        self, target_end_effector_pose: Pose, collision_ignore_ids: set[int]
+    ) -> None:
+        current_robot_joints = self.robot.get_joint_positions()
+        try:
+            robot_joints = inverse_kinematics(self.robot, target_end_effector_pose)
+        except InverseKinematicsError:
+            if self.raise_error_on_action_failures:
+
+                # Uncomment to debug.
+                # from pybullet_helpers.gui import visualize_pose
+                # current_ee = self.robot.get_end_effector_pose()
+                # visualize_pose(current_ee, self.physics_client_id)
+                # visualize_pose(target_end_effector_pose, self.physics_client_id)
+                # while True:
+                #     p.getMouseEvents(self.physics_client_id)
+
+                raise ActionFailure("Cannot reach target")
+        # Check for collisions.
+        set_robot_joints_with_held_object(
+            self.robot,
+            self.physics_client_id,
+            self._current_held_object_id,
+            self._current_held_object_transform,
+            robot_joints,
+        )
+        if self._collision_exists(ignore_ids=collision_ignore_ids):
+            if self.raise_error_on_action_failures:
+
+                # Uncomment to debug.
+                # from pybullet_helpers.gui import visualize_pose
+                # current_ee = self.robot.get_end_effector_pose()
+                # visualize_pose(current_ee, self.physics_client_id)
+                # visualize_pose(target_end_effector_pose, self.physics_client_id)
+                # while True:
+                #     p.getMouseEvents(self.physics_client_id)
+
+                raise ActionFailure("End effector would collide when reaching")
+        # Reset to original.
+        set_robot_joints_with_held_object(
+            self.robot,
+            self.physics_client_id,
+            self._current_held_object_id,
+            self._current_held_object_transform,
+            current_robot_joints,
+        )
+
+    def _object_name_to_id(self, name: str) -> int:
+        if name == "block":
+            return self.block_id
+        raise NotImplementedError
+
+    def _collision_exists(self, ignore_ids: set[int] | None = None) -> bool:
+        """Check for collisions between the robot (and held object) and obstacles."""
+        ignore_ids = ignore_ids or set()
+        collision_bodies = set(self.obstacle_ids) - ignore_ids
+        return check_collisions_with_held_object(
+            self.robot,
+            collision_bodies,
+            self.physics_client_id,
+            self._current_held_object_id,
+            self._current_held_object_transform,
+            self.robot.get_joint_positions(),
+        )
