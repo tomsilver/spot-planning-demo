@@ -31,7 +31,7 @@ class Place(SpotAction):
     """Place a held object onto a surface."""
 
     surface_name: str  # unique object name
-    end_effector_placement_pose: Pose  # relative to robot shoulder (not surface)
+    placement_pose: Pose  # absolute object pose
 
 
 @dataclass(frozen=True)

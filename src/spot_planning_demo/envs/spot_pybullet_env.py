@@ -17,7 +17,14 @@ from pybullet_helpers.robots import create_pybullet_robot
 from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
 from pybullet_helpers.utils import create_pybullet_block
 
-from spot_planning_demo.structs import BANISH_POSE, HandOver, MoveBase, Pick, SpotAction
+from spot_planning_demo.structs import (
+    BANISH_POSE,
+    HandOver,
+    MoveBase,
+    Pick,
+    Place,
+    SpotAction,
+)
 
 ObsType: TypeAlias = Any  # coming soon
 RenderFrame: TypeAlias = Any
@@ -105,6 +112,9 @@ class SpotPybulletSimSpec:
         255 / 255,
         0.5,
     )
+
+    # Hyperparameter for checking placement on surface success.
+    placement_surface_threshold: float = 1e-1
 
     def get_camera_kwargs(self) -> dict[str, Any]:
         """Derived kwargs for taking images."""
@@ -281,6 +291,9 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         elif isinstance(action, Pick):
             self._step_pick(action.object_name, action.end_effector_to_grasp_pose)
 
+        elif isinstance(action, Place):
+            self._step_place(action.surface_name, action.placement_pose)
+
         elif isinstance(action, HandOver):
             self._step_hand_over(action.pose)
 
@@ -341,6 +354,48 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         # Pick succeeds.
         self._current_held_object_id = object_id
         self._current_held_object_transform = end_effector_to_grasp_pose
+
+    def _step_place(self, surface_name: str, pose: Pose) -> None:
+        # Need to be holding something for place to be possible.
+        if self._current_held_object_id is None:
+            if self.raise_error_on_action_failures:
+                raise ActionFailure("Cannot place when hand is empty")
+            return
+        assert self._current_held_object_transform is not None
+        assert self._current_held_object_transform is not None
+        target_end_effector_pose = multiply_poses(
+            pose,
+            self._current_held_object_transform.invert(),
+        )
+        self._step_reach_end_effector_pose(
+            target_end_effector_pose,
+            collision_ignore_ids={self._current_held_object_id},
+        )
+        # Tentatively set the object and measure distance to surface.
+        current_held_object_pose = get_pose(
+            self._current_held_object_id, self.physics_client_id
+        )
+        set_pose(self._current_held_object_id, pose, self.physics_client_id)
+        surface_id = self._object_name_to_id(surface_name)
+        # Check distance between held object and surface.
+        closest_points = p.getClosestPoints(
+            self._current_held_object_id,
+            surface_id,
+            distance=self.scene_description.placement_surface_threshold,
+            physicsClientId=self.physics_client_id,
+        )
+        if not closest_points:
+            set_pose(
+                self._current_held_object_id,
+                current_held_object_pose,
+                self.physics_client_id,
+            )
+            if self.raise_error_on_action_failures:
+                raise ActionFailure("Cannot place when hand is empty")
+            return
+        # Placement succeeded.
+        self._current_held_object_id = None
+        self._current_held_object_transform = None
 
     def _step_hand_over(self, pose: Pose) -> None:
         # Need to be holding something for handover to be possible.
@@ -415,6 +470,10 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
             return self.purple_block_id
         if name == "green block":
             return self.green_block_id
+        if name == "table":
+            return self.table_id
+        if name == "floor":
+            return self.floor_id
         raise NotImplementedError
 
     def _collision_exists(self, ignore_ids: set[int] | None = None) -> bool:
