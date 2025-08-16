@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Any, SupportsFloat, TypeAlias
 
 import gymnasium
-import numpy as np
 import pybullet as p
 from pybullet_helpers.geometry import Pose, get_pose, multiply_poses, set_pose
 from pybullet_helpers.gui import create_gui_connection
@@ -45,8 +44,21 @@ class SpotPybulletSimSpec:
     table_pose: Pose = Pose((1.0, 0.0, table_half_extents[2]))
     table_color: tuple[float, float, float, float] = (0.6, 0.3, 0.1, 1.0)
 
-    # TODO: add a ceiling above the table to force side grasp (and then later,
-    # force moving obstacle out of the way)
+    # Shelf ceiling, forcing a side grasp and possibly forcing removal of obstacles.
+    shelf_ceiling_half_extents: tuple[float, float, float] = (
+        table_half_extents[0],
+        table_half_extents[1],
+        0.001,
+    )
+    shelf_ceiling_pose: Pose = Pose(
+        (
+            table_pose.position[0],
+            table_pose.position[1],
+            table_pose.position[2] + table_half_extents[2] + 0.25,
+        ),
+        table_pose.orientation,
+    )
+    shelf_ceiling_color: tuple[float, float, float, float] = (0.6, 0.3, 0.1, 0.5)
 
     # Block.
     block_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.05)
@@ -148,6 +160,18 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
             self.table_id, self.scene_description.table_pose, self.physics_client_id
         )
 
+        # Create a shelf ceiling.
+        self.shelf_ceiling_id = create_pybullet_block(
+            self.scene_description.shelf_ceiling_color,
+            self.scene_description.shelf_ceiling_half_extents,
+            self.physics_client_id,
+        )
+        set_pose(
+            self.shelf_ceiling_id,
+            self.scene_description.shelf_ceiling_pose,
+            self.physics_client_id,
+        )
+
         # Create block.
         self.block_id = create_pybullet_block(
             self.scene_description.block_color,
@@ -177,7 +201,7 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         self._current_held_object_transform: Pose | None = None
 
         # Designate obstacles.
-        self.obstacle_ids = {self.block_id, self.table_id}
+        self.obstacle_ids = {self.block_id, self.table_id, self.shelf_ceiling_id}
 
     def reset(
         self,
