@@ -18,7 +18,7 @@ RenderFrame: TypeAlias = Any  # coming soon
 
 @dataclass(frozen=True)
 class SpotPybulletSimSpec:
-    """Scene description forSpotPyBulletSim()."""
+    """Scene description for SpotPyBulletSim()."""
 
     # Robot.
     robot_base_pose: Pose = Pose.identity()
