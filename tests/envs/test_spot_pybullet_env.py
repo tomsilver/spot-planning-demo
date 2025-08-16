@@ -18,7 +18,7 @@ def test_spot_pybullet_sim():
 
     # Test a sequence of actions.
     action_sequence = [
-        Pick("block"),
+        Pick("block", Pose.from_rpy((0, 0, 0.1), (0, np.pi, 0))),
         MoveBase(Pose.from_rpy((-1.0, 0.0, 0.0), (0.0, 0.0, -np.pi / 2))),
         HandOver(drop_zone_pose),
     ]
@@ -71,7 +71,7 @@ def test_spot_pybullet_pick():
 
     # Picking the block from the origin should be possible.
     sim.robot.set_base(Pose.identity())
-    sim.step(Pick("block"))
+    sim.step(Pick("block", Pose.from_rpy((0, 0, 0.1), (0, np.pi, 0))))
     assert sim._current_held_object_id is not None  # pylint: disable=protected-access
 
     # Picking the block from further back should not be possible.
@@ -86,7 +86,7 @@ def test_spot_pybullet_pick():
     #     p.getMouseEvents(sim.physics_client_id)
 
     with pytest.raises(ActionFailure):
-        sim.step(Pick("block"))
+        sim.step(Pick("block", Pose.from_rpy((0, 0, 0.1), (0, np.pi, 0))))
 
 
 def test_spot_pybullet_handover():
@@ -108,13 +108,13 @@ def test_spot_pybullet_handover():
         init_block_pose.orientation,
     )
     sim.robot.set_base(Pose.identity())
-    sim.step(Pick("block"))
+    sim.step(Pick("block", Pose.from_rpy((0, 0, 0.1), (0, np.pi, 0))))
     sim.step(HandOver(good_handover_pose))
 
     # It should be impossible to hand over to a far-away pose.
     far_pose = Pose((1000, 1000, 0))
     sim.reset(seed=123)
     sim.robot.set_base(Pose.identity())
-    sim.step(Pick("block"))
+    sim.step(Pick("block", Pose.from_rpy((0, 0, 0.1), (0, np.pi, 0))))
     with pytest.raises(ActionFailure):
         sim.step(HandOver(far_pose))

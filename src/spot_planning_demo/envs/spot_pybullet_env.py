@@ -34,7 +34,6 @@ class SpotPybulletSimSpec:
 
     # Robot.
     robot_base_pose: Pose = Pose.identity()
-    end_effector_to_grasp_pose: Pose = Pose.from_rpy((0, 0, 0.1), (0, np.pi, 0))
 
     # Floor.
     floor_color: tuple[float, float, float, float] = (0.3, 0.3, 0.3, 1.0)
@@ -45,6 +44,9 @@ class SpotPybulletSimSpec:
     table_half_extents: tuple[float, float, float] = (0.3, 0.4, 0.3)
     table_pose: Pose = Pose((0.9, 0.0, table_half_extents[2]))
     table_color: tuple[float, float, float, float] = (0.6, 0.3, 0.1, 1.0)
+
+    # TODO: add a ceiling above the table to force side grasp (and then later,
+    # force moving obstacle out of the way)
 
     # Block.
     block_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.025)
@@ -209,7 +211,7 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
             self._step_move_base(action.pose)
 
         elif isinstance(action, Pick):
-            self._step_pick(action.object_name)
+            self._step_pick(action.object_name, action.end_effector_to_grasp_pose)
 
         elif isinstance(action, HandOver):
             self._step_hand_over(action.pose)
@@ -250,7 +252,7 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
                 raise ActionFailure("Robot in collision")
             self.robot.set_base(current_robot_base_pose)
 
-    def _step_pick(self, object_name: str) -> None:
+    def _step_pick(self, object_name: str, end_effector_to_grasp_pose: Pose) -> None:
         # Can only pick if hand is empty.
         if self._current_held_object_id is not None:
             if self.raise_error_on_action_failures:
@@ -263,16 +265,14 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         target_object_pose = get_pose(object_id, self.physics_client_id)
         target_end_effector_pose = multiply_poses(
             target_object_pose,
-            self.scene_description.end_effector_to_grasp_pose.invert(),
+            end_effector_to_grasp_pose.invert(),
         )
         self._step_reach_end_effector_pose(
             target_end_effector_pose, collision_ignore_ids={object_id}
         )
         # Pick succeeds.
         self._current_held_object_id = object_id
-        self._current_held_object_transform = (
-            self.scene_description.end_effector_to_grasp_pose
-        )
+        self._current_held_object_transform = end_effector_to_grasp_pose
 
     def _step_hand_over(self, pose: Pose) -> None:
         # Need to be holding something for handover to be possible.
@@ -281,9 +281,10 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
                 raise ActionFailure("Cannot hand over when hand is empty")
             return
         # Check reachability. The pose is in the object space, so transform to ee.
+        assert self._current_held_object_transform is not None
         target_end_effector_pose = multiply_poses(
             pose,
-            self.scene_description.end_effector_to_grasp_pose.invert(),
+            self._current_held_object_transform.invert(),
         )
         self._step_reach_end_effector_pose(
             target_end_effector_pose,
