@@ -5,7 +5,7 @@ from spot_planning_demo.envs.spot_pybullet_env import SpotPyBulletSim
 
 def test_spot_pybullet_sim():
     """Tests for SpotPyBulletSim()."""
-    sim = SpotPyBulletSim(use_gui=False)  # change use_gui to True for debugging
+    sim = SpotPyBulletSim(use_gui=True)  # change use_gui to True for debugging
     assert isinstance(sim, SpotPyBulletSim)
 
     # Uncomment to debug.
