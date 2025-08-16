@@ -261,23 +261,7 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
             target_object_pose,
             self.scene_description.end_effector_to_grasp_pose.invert(),
         )
-        current_robot_joints = self.robot.get_joint_positions()
-        try:
-            inverse_kinematics(self.robot, target_end_effector_pose)
-        except InverseKinematicsError:
-            if self.raise_error_on_action_failures:
-
-                # Uncomment to debug.
-                # from pybullet_helpers.gui import visualize_pose
-                # current_ee = self.robot.get_end_effector_pose()
-                # visualize_pose(current_ee, self.physics_client_id)
-                # visualize_pose(target_end_effector_pose, self.physics_client_id)
-                # while True:
-                #     p.getMouseEvents(self.physics_client_id)
-
-                raise ActionFailure("Cannot reach pick target")
-            return
-        self.robot.set_joints(current_robot_joints)
+        self._step_reach_end_effector_pose(target_end_effector_pose)
         # Pick succeeds.
         self._current_held_object_id = object_id
         self._current_held_object_transform = (
@@ -295,6 +279,13 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
             pose,
             self.scene_description.end_effector_to_grasp_pose.invert(),
         )
+        self._step_reach_end_effector_pose(target_end_effector_pose)
+        # Hand over succeeds.
+        set_pose(self._current_held_object_id, BANISH_POSE, self.physics_client_id)
+        self._current_held_object_id = None
+        self._current_held_object_transform = None
+
+    def _step_reach_end_effector_pose(self, target_end_effector_pose: Pose) -> None:
         current_robot_joints = self.robot.get_joint_positions()
         try:
             inverse_kinematics(self.robot, target_end_effector_pose)
@@ -312,10 +303,6 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
                 raise ActionFailure("Cannot reach hand over target")
             return
         self.robot.set_joints(current_robot_joints)
-        # Hand over succeeds.
-        set_pose(self._current_held_object_id, BANISH_POSE, self.physics_client_id)
-        self._current_held_object_id = None
-        self._current_held_object_transform = None
 
     def _object_name_to_id(self, name: str) -> int:
         if name == "block":
