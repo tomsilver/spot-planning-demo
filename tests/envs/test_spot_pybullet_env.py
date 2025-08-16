@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from pybullet_helpers.geometry import Pose, get_pose
+from pybullet_helpers.geometry import Pose, get_pose, set_pose
 
 from spot_planning_demo.envs.spot_pybullet_env import ActionFailure, SpotPyBulletSim
 from spot_planning_demo.structs import HandOver, MoveBase, Pick
@@ -94,6 +94,22 @@ def test_spot_pybullet_pick():
     # while True:
     #     p.getMouseEvents(sim.physics_client_id)
 
+    with pytest.raises(ActionFailure):
+        sim.step(Pick("purple block", side_grasp))
+
+    # Picking the purple block should not be possible if the green block is in front.
+    sim.reset(seed=123)
+    sim.robot.set_base(Pose.identity())
+    purple_block_pose = get_pose(sim.purple_block_id, sim.physics_client_id)
+    obstructing_pose = Pose(
+        (
+            purple_block_pose.position[0] - 0.1,
+            purple_block_pose.position[1],
+            purple_block_pose.position[2],
+        ),
+        purple_block_pose.orientation,
+    )
+    set_pose(sim.green_block_id, obstructing_pose, sim.physics_client_id)
     with pytest.raises(ActionFailure):
         sim.step(Pick("purple block", side_grasp))
 
