@@ -33,6 +33,15 @@ class SpotPybulletSimSpec:
     table_pose: Pose = Pose((0.9, 0.0, table_half_extents[2]))
     table_color: tuple[float, float, float, float] = (0.6, 0.3, 0.1, 1.0)
 
+    # Block.
+    block_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.025)
+    block_init_pose: Pose = Pose((
+        table_pose.position[0] - table_half_extents[0] / 2,
+        table_pose.position[1],
+        table_pose.position[2] + table_half_extents[2] + block_half_extents[2],
+    ))
+    block_color: tuple[float, float, float] = (170 / 255, 121 / 255, 222 / 255, 1.0)
+
     def get_camera_kwargs(self) -> dict[str, Any]:
         """Derived kwargs for taking images."""
         return {
@@ -97,6 +106,14 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, ActType]):
             self.physics_client_id,
         )
         set_pose(self.table_id, self.scene_description.table_pose, self.physics_client_id)
+
+        # Create block.
+        self.block_id = create_pybullet_block(
+            self.scene_description.block_color,
+            self.scene_description.block_half_extents,
+            self.physics_client_id,
+        )
+        set_pose(self.block_id, self.scene_description.block_init_pose, self.physics_client_id)
 
 
 
