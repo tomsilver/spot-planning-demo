@@ -81,8 +81,8 @@ def test_spot_pybullet_pick():
     assert sim._current_held_object_id is not None  # pylint: disable=protected-access
 
     # Picking the block from further back should not be possible.
-    # sim.reset(seed=123)
-    # sim.robot.set_base(Pose((-1.0, 0.0, 0.0)))
+    sim.reset(seed=123)
+    sim.robot.set_base(Pose((-1.0, 0.0, 0.0)))
 
     # Uncomment to debug.
     # import pybullet as p
