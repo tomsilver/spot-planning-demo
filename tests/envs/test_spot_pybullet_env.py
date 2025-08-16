@@ -96,11 +96,20 @@ def test_spot_pybullet_handover():
     )  # change use_gui to True for debugging
     sim.reset(seed=123)
 
-    # It should be possible to hand over back to the pose where the block started.
+    # It should be possible to hand over back to the pose where the block started, with
+    # a little bit of padding added to avoid issues with table collisions.
     init_block_pose = get_pose(sim.block_id, sim.physics_client_id)
+    good_handover_pose = Pose(
+        (
+            init_block_pose.position[0],
+            init_block_pose.position[1],
+            init_block_pose.position[2] + 1e-1,
+        ),
+        init_block_pose.orientation,
+    )
     sim.robot.set_base(Pose.identity())
     sim.step(Pick("block"))
-    sim.step(HandOver(init_block_pose))
+    sim.step(HandOver(good_handover_pose))
 
     # It should be impossible to hand over to a far-away pose.
     far_pose = Pose((1000, 1000, 0))

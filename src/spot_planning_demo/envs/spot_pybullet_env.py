@@ -12,6 +12,7 @@ from pybullet_helpers.inverse_kinematics import (
     InverseKinematicsError,
     check_collisions_with_held_object,
     inverse_kinematics,
+    set_robot_joints_with_held_object,
 )
 from pybullet_helpers.robots import create_pybullet_robot
 from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
@@ -33,7 +34,7 @@ class SpotPybulletSimSpec:
 
     # Robot.
     robot_base_pose: Pose = Pose.identity()
-    end_effector_to_grasp_pose: Pose = Pose.from_rpy((0, 0, 0), (0, np.pi, 0))
+    end_effector_to_grasp_pose: Pose = Pose.from_rpy((0, 0, 0.1), (0, np.pi, 0))
 
     # Floor.
     floor_color: tuple[float, float, float, float] = (0.3, 0.3, 0.3, 1.0)
@@ -241,7 +242,10 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         # Tentatively update the base pose.
         self.robot.set_base(new_pose)
         # Check for collisions.
-        if self._collision_exists():
+        ignore_ids = (
+            {self._current_held_object_id} if self._current_held_object_id else set()
+        )
+        if self._collision_exists(ignore_ids=ignore_ids):
             if self.raise_error_on_action_failures:
                 raise ActionFailure("Robot in collision")
             self.robot.set_base(current_robot_base_pose)
@@ -261,7 +265,9 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
             target_object_pose,
             self.scene_description.end_effector_to_grasp_pose.invert(),
         )
-        self._step_reach_end_effector_pose(target_end_effector_pose)
+        self._step_reach_end_effector_pose(
+            target_end_effector_pose, collision_ignore_ids={object_id}
+        )
         # Pick succeeds.
         self._current_held_object_id = object_id
         self._current_held_object_transform = (
@@ -279,16 +285,21 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
             pose,
             self.scene_description.end_effector_to_grasp_pose.invert(),
         )
-        self._step_reach_end_effector_pose(target_end_effector_pose)
+        self._step_reach_end_effector_pose(
+            target_end_effector_pose,
+            collision_ignore_ids={self._current_held_object_id},
+        )
         # Hand over succeeds.
         set_pose(self._current_held_object_id, BANISH_POSE, self.physics_client_id)
         self._current_held_object_id = None
         self._current_held_object_transform = None
 
-    def _step_reach_end_effector_pose(self, target_end_effector_pose: Pose) -> None:
+    def _step_reach_end_effector_pose(
+        self, target_end_effector_pose: Pose, collision_ignore_ids: set[int]
+    ) -> None:
         current_robot_joints = self.robot.get_joint_positions()
         try:
-            inverse_kinematics(self.robot, target_end_effector_pose)
+            robot_joints = inverse_kinematics(self.robot, target_end_effector_pose)
         except InverseKinematicsError:
             if self.raise_error_on_action_failures:
 
@@ -300,20 +311,45 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
                 # while True:
                 #     p.getMouseEvents(self.physics_client_id)
 
-                raise ActionFailure("Cannot reach hand over target")
-            return
-        self.robot.set_joints(current_robot_joints)
+                raise ActionFailure("Cannot reach target")
+        # Check for collisions.
+        set_robot_joints_with_held_object(
+            self.robot,
+            self.physics_client_id,
+            self._current_held_object_id,
+            self._current_held_object_transform,
+            robot_joints,
+        )
+        if self._collision_exists(ignore_ids=collision_ignore_ids):
+            if self.raise_error_on_action_failures:
+
+                # Uncomment to debug.
+                # from pybullet_helpers.gui import visualize_pose
+                # current_ee = self.robot.get_end_effector_pose()
+                # visualize_pose(current_ee, self.physics_client_id)
+                # visualize_pose(target_end_effector_pose, self.physics_client_id)
+                # while True:
+                #     p.getMouseEvents(self.physics_client_id)
+
+                raise ActionFailure("End effector would collide when reaching")
+        # Reset to original.
+        set_robot_joints_with_held_object(
+            self.robot,
+            self.physics_client_id,
+            self._current_held_object_id,
+            self._current_held_object_transform,
+            current_robot_joints,
+        )
 
     def _object_name_to_id(self, name: str) -> int:
         if name == "block":
             return self.block_id
         raise NotImplementedError
 
-    def _collision_exists(self) -> bool:
+    def _collision_exists(self, ignore_ids: set[int] | None = None) -> bool:
         """Check for collisions between the robot (and held object) and obstacles."""
-        collision_bodies = set(self.obstacle_ids)
-        if self._current_held_object_id is not None:
-            collision_bodies.discard(self._current_held_object_id)
+        ignore_ids = ignore_ids or set()
+        collision_bodies = set(self.obstacle_ids) - ignore_ids
         return check_collisions_with_held_object(
             self.robot,
             collision_bodies,
