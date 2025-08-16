@@ -5,5 +5,13 @@ from spot_planning_demo.envs.spot_pybullet_env import SpotPyBulletSim
 
 def test_spot_pybullet_sim():
     """Tests for SpotPyBulletSim()."""
-    sim = SpotPyBulletSim()
+    sim = SpotPyBulletSim(use_gui=False)  # change use_gui to True for debugging
     assert isinstance(sim, SpotPyBulletSim)
+
+    # Uncomment to debug.
+    # import pybullet as p
+    # from pybullet_helpers.gui import visualize_pose
+    # from pybullet_helpers.geometry import Pose
+    # visualize_pose(Pose.identity(), sim.physics_client_id)
+    # while True:
+    #     p.getMouseEvents(sim.physics_client_id)
