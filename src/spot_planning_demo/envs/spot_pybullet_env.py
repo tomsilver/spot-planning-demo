@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from typing import Any, SupportsFloat, TypeAlias
-from spot_planning_demo.structs import MoveBase, SpotAction, Pick
+from spot_planning_demo.structs import MoveBase, SpotAction, Pick, HandOver, BANISH_POSE
 
 import gymnasium
 import pybullet as p
@@ -196,6 +196,14 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
             # TODO: check gaze and reachability and hand empty
             self._current_held_object = action.object_name
             self._current_held_object_transform = self.scene_description.end_effector_to_grasp_pose
+
+        elif isinstance(action, HandOver):
+            # TODO check reachability and held object
+            assert self._current_held_object is not None
+            current_held_object_id = self._object_name_to_id(self._current_held_object)
+            set_pose(current_held_object_id, BANISH_POSE, self.physics_client_id)
+            self._current_held_object = None
+            self._current_held_object_transform = None
             
         else:
             raise NotImplementedError

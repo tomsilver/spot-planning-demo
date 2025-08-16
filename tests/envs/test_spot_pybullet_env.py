@@ -1,8 +1,8 @@
 """Tests for spot_pybullet_env.py."""
 
 from spot_planning_demo.envs.spot_pybullet_env import SpotPyBulletSim
-from spot_planning_demo.structs import MoveBase, Pick
-from pybullet_helpers.geometry import Pose
+from spot_planning_demo.structs import MoveBase, Pick, HandOver
+from pybullet_helpers.geometry import Pose, get_pose
 import numpy as np
 
 
@@ -12,13 +12,13 @@ def test_spot_pybullet_sim():
     assert isinstance(sim, SpotPyBulletSim)
 
     sim.reset(seed=123)
-    # drop_zone_pose = get_pose(sim.drop_zone_id, sim.physics_client_id)
+    drop_zone_pose = get_pose(sim.drop_zone_id, sim.physics_client_id)
 
     # Test a sequence of actions.
     action_sequence = [
         Pick("block"),
         MoveBase(Pose.from_rpy((-1.0, 0.0, 0.0), (0.0, 0.0, -np.pi / 2))),
-        # HandOver(drop_zone_pose)
+        HandOver(drop_zone_pose)
     ]
 
     # For now, just make sure this doesn't crash.
