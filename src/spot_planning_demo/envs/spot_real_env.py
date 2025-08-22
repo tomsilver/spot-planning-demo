@@ -126,10 +126,11 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
         return None
 
     def _step_move_base(self, new_pose: Pose) -> None:
-        desired_pose_se2 = SE2Pose(
+        desired_world_pose_se2 = SE2Pose(
             new_pose.position[0], new_pose.position[1], new_pose.rpy[2]
         )
-        navigate_to_absolute_pose(self.robot, self.localizer, desired_pose_se2)
+        desired_localizer_pose_se2 = self.scene_description.map_to_world_frame_tf * desired_world_pose_se2
+        navigate_to_absolute_pose(self.robot, self.localizer, desired_localizer_pose_se2)
 
     def _step_pick(self, object_name: str, end_effector_to_grasp_pose: Pose) -> None:
         pass
