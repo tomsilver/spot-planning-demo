@@ -80,7 +80,8 @@ def navigate_to_relative_pose(
             feedback.feedback.synchronized_feedback.mobility_command_feedback
         )
         if (
-            mobility_feedback.status != RobotCommandFeedbackStatus.STATUS_PROCESSING   # pylint: disable=no-member
+            mobility_feedback.status
+            != RobotCommandFeedbackStatus.STATUS_PROCESSING  # pylint: disable=no-member
         ):
             logging.warning("Failed to reach the goal")
             return
