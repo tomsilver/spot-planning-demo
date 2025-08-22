@@ -49,7 +49,7 @@ DEFAULT_HAND_POST_DUMP_POSE = math_helpers.SE3Pose(
 
 def get_graph_nav_dir(map_room_name: str) -> Path:
     """Get the path to the graph nav directory."""
-    upload_dir = Path(__file__).parent / "graph_nav_maps"
+    upload_dir = Path(__file__).parents[3] / "graph_nav_maps"
     return upload_dir / map_room_name
 
 
