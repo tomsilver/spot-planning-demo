@@ -1,9 +1,12 @@
 """Real environment for Spot that mirrors spot_pybullet_env."""
 
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, SupportsFloat, TypeAlias
 
 import gymnasium
+from bosdyn.client import create_standard_sdk
 from pybullet_helpers.geometry import Pose
 
 from spot_planning_demo.structs import HandOver, MoveBase, Pick, Place, SpotAction
@@ -15,6 +18,16 @@ RenderFrame: TypeAlias = Any
 @dataclass(frozen=True)
 class SpotRealEnvSpec:
     """Scene description for SpotRealEnv()."""
+
+    graph_nav_map: Path = (
+        Path(__file__).parents[3] / "graph_nav_maps" / "prpl_fwing_test_map"
+    )
+    sdk_client_name: str = "SpotPlanningDemoClient"
+
+    def __post_init__(self) -> None:
+        assert (
+            self.graph_nav_map.exists()
+        ), f"Graph nav map directory not found: {self.graph_nav_map}"
 
 
 class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
@@ -30,6 +43,13 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
         self.scene_description = scene_description
+
+        # Create the spot robot.
+        sdk = create_standard_sdk(self.scene_description.sdk_client_name)
+        if "BOSDYN_IP" not in os.environ:
+            raise KeyError("BOSDYN_IP not found in os.environ")
+        hostname = os.environ.get("BOSDYN_IP")
+        self.robot = sdk.create_robot(hostname)
 
     def reset(
         self,
