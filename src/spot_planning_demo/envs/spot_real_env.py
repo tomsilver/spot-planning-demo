@@ -1,6 +1,5 @@
 """Real environment for Spot that mirrors spot_pybullet_env.
 
-
 # TODO: CHANGE SIM TO MATCH THE BELOW CONVENTION
 
 NOTE: the origin (0, 0, 0) is Spot facing towards the table, and:
@@ -17,11 +16,14 @@ from typing import Any, SupportsFloat, TypeAlias
 import gymnasium
 from bosdyn.client import create_standard_sdk
 from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
-from bosdyn.client.util import authenticate
 from bosdyn.client.math_helpers import SE2Pose
+from bosdyn.client.util import authenticate
 from pybullet_helpers.geometry import Pose
 
-from spot_planning_demo.spot_utils.localization import SpotLocalizer
+from spot_planning_demo.spot_utils.skills.spot_navigation import (
+    navigate_to_absolute_pose,
+)
+from spot_planning_demo.spot_utils.spot_localization import SpotLocalizer
 from spot_planning_demo.spot_utils.utils import verify_estop
 from spot_planning_demo.structs import HandOver, MoveBase, Pick, Place, SpotAction
 
@@ -38,7 +40,6 @@ class SpotRealEnvSpec:
     )
     sdk_client_name: str = "SpotPlanningDemoClient"
     map_to_world_frame_tf: SE2Pose = SE2Pose(2.287, -0.339, 1.421)
-        
 
     def __post_init__(self) -> None:
         assert (
@@ -90,7 +91,7 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
         seed: int | None = None,
         options: dict[str, Any] | None = None,
     ) -> tuple[ObsType, dict[str, Any]]:
-        
+
         # TODO remove
         print("Current robot pose:", self._get_robot_pose())
 
@@ -114,7 +115,7 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
 
         else:
             raise NotImplementedError
-        
+
         # TODO remove
         print("Current robot pose:", self._get_robot_pose())
 
@@ -125,7 +126,10 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
         return None
 
     def _step_move_base(self, new_pose: Pose) -> None:
-        pass
+        desired_pose_se2 = SE2Pose(
+            new_pose.position[0], new_pose.position[1], new_pose.rpy[2]
+        )
+        navigate_to_absolute_pose(self.robot, self.localizer, desired_pose_se2)
 
     def _step_pick(self, object_name: str, end_effector_to_grasp_pose: Pose) -> None:
         pass
@@ -140,6 +144,10 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
         self.localizer.localize()
         localizer_se3_pose = self.localizer.get_last_robot_pose()
         localizer_se2_pose = localizer_se3_pose.get_closest_se2_transform()
-        world_se2_pose = localizer_se2_pose * self.scene_description.map_to_world_frame_tf.inverse()
-        world_pose = Pose.from_rpy((world_se2_pose.x, world_se2_pose.y, 0), (world_se2_pose.angle, 0, 0))
+        world_se2_pose = (
+            localizer_se2_pose * self.scene_description.map_to_world_frame_tf.inverse()
+        )
+        world_pose = Pose.from_rpy(
+            (world_se2_pose.x, world_se2_pose.y, 0), (world_se2_pose.angle, 0, 0)
+        )
         return world_pose
