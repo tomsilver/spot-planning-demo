@@ -631,6 +631,12 @@ if __name__ == "__main__":
             required=True,
             help="The robot's hostname/ip-address (e.g. 192.168.80.3)",
         )
+        parser.add_argument(
+            "--map_name",
+            type=str,
+            required=True,
+            help="The name of the map folder to load (sub-folder under graph_nav_maps)",
+        )
         args = parser.parse_args()
 
         hostname = args.hostname

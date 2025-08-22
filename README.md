@@ -4,6 +4,10 @@
 
 ## Real Spot Robot Setup Instructions
 
+### Hardware Notes
+
+To use perception or any APIs over Wifi (LLMs etc.), we need to be able to connect to both the robot and the internet at the same time. The main way that we do this is by connecting to the robot over Wifi, and connecting to the internet over ethernet (from the laptop/desktop). So before you get started with perception, you will need an ethernet connection. At Princeton, this may require registering your device through IT in addition to purchasing the appropriate cables and adapters. A temporary workaround (not recommended for long, because of cellular data costs and latency) is to tether your phone via USB, instead of using ethernet.
+
 ### Set Environment Variables
 
 ```bash
