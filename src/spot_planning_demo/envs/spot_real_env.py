@@ -6,7 +6,7 @@ from typing import Any, SupportsFloat, TypeAlias
 import gymnasium
 from pybullet_helpers.geometry import Pose
 
-from spot_planning_demo.structs import HandOver, MoveBase, Pick, SpotAction, Place
+from spot_planning_demo.structs import HandOver, MoveBase, Pick, Place, SpotAction
 
 ObsType: TypeAlias = Any  # coming soon
 RenderFrame: TypeAlias = Any
@@ -15,7 +15,6 @@ RenderFrame: TypeAlias = Any
 @dataclass(frozen=True)
 class SpotRealEnvSpec:
     """Scene description for SpotRealEnv()."""
-
 
 
 class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
@@ -27,7 +26,6 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
         self,
         scene_description: SpotRealEnvSpec = SpotRealEnvSpec(),
         render_mode: str | None = "rgb_array",
-        use_gui: bool = False,
     ):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
