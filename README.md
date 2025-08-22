@@ -14,6 +14,8 @@ export BOSDYN_IP="192.168.80.3"
 
 ### Create GraphNav Map
 
+**Do this once per real-world environment.**
+
 For now, we are still using the [Boston Dynamics SDK example script](https://github.com/boston-dynamics/spot-sdk/blob/master/python/examples/graph_nav_command_line/graph_nav_util.py). Later we should make this our own.
 
 Save the downloaded map in `graph_nav_maps/` with a distinctive name.
