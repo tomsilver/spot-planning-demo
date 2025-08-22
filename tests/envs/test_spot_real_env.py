@@ -1,6 +1,6 @@
 """Tests for spot_real_env.py.
 
-NOTE: all these tests are disabled in CI. Test locally, for example:
+NOTE: all these tests are disabled in CI.
 """
 
 import os

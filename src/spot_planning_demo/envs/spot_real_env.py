@@ -1,4 +1,13 @@
-"""Real environment for Spot that mirrors spot_pybullet_env."""
+"""Real environment for Spot that mirrors spot_pybullet_env.
+
+
+# TODO: CHANGE SIM TO MATCH THE BELOW CONVENTION
+
+NOTE: the origin (0, 0, 0) is Spot facing towards the table, and:
+    - +x is facing right
+    - +y is facing forward
+    - +z is facing up
+"""
 
 import os
 from dataclasses import dataclass
@@ -9,6 +18,7 @@ import gymnasium
 from bosdyn.client import create_standard_sdk
 from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
 from bosdyn.client.util import authenticate
+from bosdyn.client.math_helpers import SE2Pose
 from pybullet_helpers.geometry import Pose
 
 from spot_planning_demo.spot_utils.localization import SpotLocalizer
@@ -27,6 +37,8 @@ class SpotRealEnvSpec:
         Path(__file__).parents[3] / "graph_nav_maps" / "prpl_fwing_test_map"
     )
     sdk_client_name: str = "SpotPlanningDemoClient"
+    map_to_world_frame_tf: SE2Pose = SE2Pose(2.287, -0.339, 1.421)
+        
 
     def __post_init__(self) -> None:
         assert (
@@ -78,6 +90,9 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
         seed: int | None = None,
         options: dict[str, Any] | None = None,
     ) -> tuple[ObsType, dict[str, Any]]:
+        
+        # TODO remove
+        print("Current robot pose:", self._get_robot_pose())
 
         return None, {}
 
@@ -99,6 +114,9 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
 
         else:
             raise NotImplementedError
+        
+        # TODO remove
+        print("Current robot pose:", self._get_robot_pose())
 
         return None, 0.0, False, False, {}
 
@@ -117,3 +135,11 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
 
     def _step_hand_over(self, pose: Pose) -> None:
         pass
+
+    def _get_robot_pose(self) -> Pose:
+        self.localizer.localize()
+        localizer_se3_pose = self.localizer.get_last_robot_pose()
+        localizer_se2_pose = localizer_se3_pose.get_closest_se2_transform()
+        world_se2_pose = localizer_se2_pose * self.scene_description.map_to_world_frame_tf.inverse()
+        world_pose = Pose.from_rpy((world_se2_pose.x, world_se2_pose.y, 0), (world_se2_pose.angle, 0, 0))
+        return world_pose
