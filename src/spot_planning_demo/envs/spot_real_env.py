@@ -7,13 +7,13 @@ from typing import Any, SupportsFloat, TypeAlias
 
 import gymnasium
 from bosdyn.client import create_standard_sdk
+from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
+from bosdyn.client.util import authenticate
 from pybullet_helpers.geometry import Pose
 
-from spot_planning_demo.structs import HandOver, MoveBase, Pick, Place, SpotAction
 from spot_planning_demo.spot_utils.localization import SpotLocalizer
-from bosdyn.client.util import authenticate
 from spot_planning_demo.spot_utils.utils import verify_estop
-from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
+from spot_planning_demo.structs import HandOver, MoveBase, Pick, Place, SpotAction
 
 ObsType: TypeAlias = Any  # coming soon
 RenderFrame: TypeAlias = Any
@@ -63,7 +63,12 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
         )
 
         # Create the localizer.
-        self.localizer = SpotLocalizer(self.robot, self.scene_description.graph_nav_map, lease_client, lease_keepalive)
+        self.localizer = SpotLocalizer(
+            self.robot,
+            self.scene_description.graph_nav_map,
+            lease_client,
+            lease_keepalive,
+        )
         self.robot.time_sync.wait_for_sync()
         self.localizer.localize()
 

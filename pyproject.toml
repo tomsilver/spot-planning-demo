@@ -15,6 +15,7 @@ dependencies = [
    "pybullet_helpers@git+https://github.com/tomsilver/pybullet-helpers.git",
    "opencv-python == 4.7.0.72",
    "scipy",
+   "types-requests",
 ]
 
 [project.optional-dependencies]
@@ -61,5 +62,6 @@ module = [
     "matplotlib.*",
     "pybullet.*",
     "bosdyn.*",
+    "cv2.*",
 ]
 ignore_missing_imports = true
