@@ -10,6 +10,10 @@ from bosdyn.client import create_standard_sdk
 from pybullet_helpers.geometry import Pose
 
 from spot_planning_demo.structs import HandOver, MoveBase, Pick, Place, SpotAction
+from spot_planning_demo.spot_utils.localization import SpotLocalizer
+from bosdyn.client.util import authenticate
+from spot_planning_demo.spot_utils.utils import verify_estop
+from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
 
 ObsType: TypeAlias = Any  # coming soon
 RenderFrame: TypeAlias = Any
@@ -44,12 +48,24 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
         self.render_mode = render_mode
         self.scene_description = scene_description
 
-        # Create the spot robot.
+        # Create the interface to the spot robot.
         sdk = create_standard_sdk(self.scene_description.sdk_client_name)
         if "BOSDYN_IP" not in os.environ:
             raise KeyError("BOSDYN_IP not found in os.environ")
         hostname = os.environ.get("BOSDYN_IP")
         self.robot = sdk.create_robot(hostname)
+        authenticate(self.robot)
+        verify_estop(self.robot)
+        lease_client = self.robot.ensure_client(LeaseClient.default_service_name)
+        lease_client.take()
+        lease_keepalive = LeaseKeepAlive(
+            lease_client, must_acquire=True, return_at_exit=True
+        )
+
+        # Create the localizer.
+        self.localizer = SpotLocalizer(self.robot, self.scene_description.graph_nav_map, lease_client, lease_keepalive)
+        self.robot.time_sync.wait_for_sync()
+        self.localizer.localize()
 
     def reset(
         self,
