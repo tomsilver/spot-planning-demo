@@ -5,7 +5,7 @@ import pytest
 from pybullet_helpers.geometry import Pose, get_pose, set_pose
 
 from spot_planning_demo.envs.spot_pybullet_env import ActionFailure, SpotPyBulletSim
-from spot_planning_demo.structs import HandOver, MoveBase, Pick
+from spot_planning_demo.structs import HandOver, MoveBase, Pick, Place
 
 
 def test_spot_pybullet_sim():
@@ -14,11 +14,32 @@ def test_spot_pybullet_sim():
         use_gui=False, raise_error_on_action_failures=True
     )  # change use_gui to True for debugging
     sim.reset(seed=123)
+    purple_block_pose = get_pose(sim.purple_block_id, sim.physics_client_id)
+    default_green_pose = get_pose(sim.green_block_id, sim.physics_client_id)
+    obstructing_pose = Pose(
+        (
+            purple_block_pose.position[0] - 0.1,
+            purple_block_pose.position[1],
+            purple_block_pose.position[2],
+        ),
+        purple_block_pose.orientation,
+    )
+    set_pose(sim.green_block_id, obstructing_pose, sim.physics_client_id)
     drop_zone_pose = get_pose(sim.drop_zone_id, sim.physics_client_id)
 
     # Test a sequence of actions.
     side_grasp = Pose.from_rpy((0, 0, 0.1), (-np.pi / 2, -np.pi / 2, 0))
+    placement_pose = Pose(
+        (
+            default_green_pose.position[0],
+            default_green_pose.position[1],
+            default_green_pose.position[2] + 1e-2,
+        ),
+        default_green_pose.orientation,
+    )
     action_sequence = [
+        Pick("green block", side_grasp),
+        Place("table", placement_pose),
         Pick("purple block", side_grasp),
         MoveBase(Pose.from_rpy((-1.0, 0.0, 0.0), (0.0, 0.0, -np.pi / 2))),
         HandOver(drop_zone_pose),
@@ -29,8 +50,8 @@ def test_spot_pybullet_sim():
         sim.step(action)
 
         # Uncomment to debug.
-        # import pybullet as p
         # import time
+        # import pybullet as p
         # for _ in range(1000):
         #     p.getMouseEvents(sim.physics_client_id)
         #     time.sleep(0.001)
@@ -112,6 +133,53 @@ def test_spot_pybullet_pick():
     set_pose(sim.green_block_id, obstructing_pose, sim.physics_client_id)
     with pytest.raises(ActionFailure):
         sim.step(Pick("purple block", side_grasp))
+
+
+def test_spot_pybullet_place():
+    """Tests for Place()."""
+    sim = SpotPyBulletSim(
+        use_gui=False, raise_error_on_action_failures=True
+    )  # change use_gui to True for debugging
+    sim.reset(seed=123)
+    side_grasp = Pose.from_rpy((0, 0, 0.1), (-np.pi / 2, -np.pi / 2, 0))
+
+    # It should be possible to place back to the pose where the block started, with
+    # a little bit of padding added to avoid issues with table collisions.
+    init_block_pose = get_pose(sim.purple_block_id, sim.physics_client_id)
+    good_placement_pose = Pose(
+        (
+            init_block_pose.position[0],
+            init_block_pose.position[1],
+            init_block_pose.position[2] + 0.05,
+        ),
+        init_block_pose.orientation,
+    )
+    sim.robot.set_base(Pose.identity())
+    sim.step(Pick("purple block", side_grasp))
+    sim.step(Place("table", good_placement_pose))
+
+    # It should be impossible to place at a far-away pose.
+    far_pose = Pose((1000, 1000, 0), init_block_pose.orientation)
+    sim.reset(seed=123)
+    sim.robot.set_base(Pose.identity())
+    sim.step(Pick("purple block", side_grasp))
+    with pytest.raises(ActionFailure):
+        sim.step(Place("table", far_pose))
+
+    # It should be impossible to place far above the table, even if that's reachable.
+    above_table_pose = Pose(
+        (
+            init_block_pose.position[0],
+            init_block_pose.position[1],
+            init_block_pose.position[2] + 0.4,  # too far
+        ),
+        init_block_pose.orientation,
+    )
+    sim.reset(seed=123)
+    sim.robot.set_base(Pose.identity())
+    sim.step(Pick("purple block", side_grasp))
+    with pytest.raises(ActionFailure):
+        sim.step(Place("table", above_table_pose))
 
 
 def test_spot_pybullet_handover():

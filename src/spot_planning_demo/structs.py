@@ -27,6 +27,14 @@ class Pick(SpotAction):
 
 
 @dataclass(frozen=True)
+class Place(SpotAction):
+    """Place a held object onto a surface."""
+
+    surface_name: str  # unique object name
+    placement_pose: Pose  # absolute object pose
+
+
+@dataclass(frozen=True)
 class HandOver(SpotAction):
     """Pick an object."""
 
