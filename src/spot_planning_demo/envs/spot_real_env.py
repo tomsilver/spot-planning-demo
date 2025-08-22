@@ -6,7 +6,7 @@ from typing import Any, SupportsFloat, TypeAlias
 import gymnasium
 from pybullet_helpers.geometry import Pose
 
-from spot_planning_demo.structs import BANISH_POSE, HandOver, MoveBase, Pick, SpotAction
+from spot_planning_demo.structs import HandOver, MoveBase, Pick, SpotAction, Place
 
 ObsType: TypeAlias = Any  # coming soon
 RenderFrame: TypeAlias = Any
@@ -52,6 +52,9 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
         elif isinstance(action, Pick):
             self._step_pick(action.object_name, action.end_effector_to_grasp_pose)
 
+        elif isinstance(action, Place):
+            self._step_place(action.surface_name, action.placement_pose)
+
         elif isinstance(action, HandOver):
             self._step_hand_over(action.pose)
 
@@ -67,8 +70,10 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
     def _step_move_base(self, new_pose: Pose) -> None:
         pass
 
-
     def _step_pick(self, object_name: str, end_effector_to_grasp_pose: Pose) -> None:
+        pass
+
+    def _step_place(self, surface_name: str, pose: Pose) -> None:
         pass
 
     def _step_hand_over(self, pose: Pose) -> None:
