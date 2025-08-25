@@ -41,20 +41,27 @@ class ActionFailure(BaseException):
 class SpotPybulletSimSpec:
     """Scene description for SpotPyBulletSim()."""
 
-    # Robot.
-    robot_base_pose: Pose = Pose.identity()
+    # Robot, with pose taken from real.
+    robot_base_pose: Pose = Pose.from_rpy((2.287, -0.339, 0), (0, 0, 1.421))
 
     # Floor.
     floor_color: tuple[float, float, float, float] = (0.3, 0.3, 0.3, 1.0)
     floor_half_extents: tuple[float, float, float] = (3, 3, 0.001)
-    floor_pose: Pose = Pose((0, 0, -floor_half_extents[2]))
+    floor_pose: Pose = Pose(
+        (
+            robot_base_pose.position[0],
+            robot_base_pose.position[1],
+            -floor_half_extents[2],
+        )
+    )
 
     # Table.
-    table_half_extents: tuple[float, float, float] = (0.3, 0.4, 0.3)
-    table_pose: Pose = Pose((1.0, 0.0, table_half_extents[2]))
+    table_half_extents: tuple[float, float, float] = (0.2, 0.1, 0.05)
+    table_pose: Pose = Pose((2.3, 0.7, table_half_extents[2]))
     table_color: tuple[float, float, float, float] = (0.6, 0.3, 0.1, 1.0)
 
     # Shelf ceiling, forcing a side grasp and possibly forcing removal of obstacles.
+    # This is currently disabled (with a very high pose.)
     shelf_ceiling_half_extents: tuple[float, float, float] = (
         table_half_extents[0],
         table_half_extents[1],
@@ -64,7 +71,9 @@ class SpotPybulletSimSpec:
         (
             table_pose.position[0],
             table_pose.position[1],
-            table_pose.position[2] + table_half_extents[2] + 0.25,
+            # Comment back to make this active again.
+            # table_pose.position[2] + table_half_extents[2] + 0.25,
+            1000,
         ),
         table_pose.orientation,
     )
@@ -89,16 +98,19 @@ class SpotPybulletSimSpec:
     )
 
     # Green block.
+    # This is currently disabled (banish pose).
     green_block_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.05)
-    green_block_init_pose: Pose = Pose(
-        (
-            table_pose.position[0] - table_half_extents[0] / 2,
-            table_pose.position[1] + table_half_extents[1] / 2,
-            table_pose.position[2]
-            + table_half_extents[2]
-            + green_block_half_extents[2],
-        )
-    )
+    green_block_init_pose: Pose = BANISH_POSE
+    # Comment this back to make it active again.
+    # green_block_init_pose: Pose = Pose(
+    #     (
+    #         table_pose.position[0] - table_half_extents[0] / 2,
+    #         table_pose.position[1] + table_half_extents[1] / 2,
+    #         table_pose.position[2]
+    #         + table_half_extents[2]
+    #         + green_block_half_extents[2],
+    #     )
+    # )
     green_block_color: tuple[float, float, float, float] = (
         10 / 255,
         222 / 255,
@@ -108,7 +120,10 @@ class SpotPybulletSimSpec:
 
     # Drop zone.
     drop_zone_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.025)
-    drop_zone_pose: Pose = Pose((-0.75, -0.75, 0.75))
+    # On the left of the initial pose.
+    drop_zone_pose: Pose = Pose(
+        (robot_base_pose.position[0] - 1.0, robot_base_pose.position[1], 0.75)
+    )
     drop_zone_color: tuple[float, float, float, float] = (
         255 / 255,
         121 / 255,

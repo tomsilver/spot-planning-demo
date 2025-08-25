@@ -27,12 +27,13 @@ def test_spot_pybullet_move_base():
     env.step(move_to_origin)
 
     # Move backward a little bit.
-    move_backward = MoveBase(Pose.from_rpy((2.287, -0.839, 0), (0, 0, 1.421)))
-    env.step(move_backward)
+    # move_backward = MoveBase(Pose.from_rpy((2.287, -0.839, 0), (0, 0, 1.421)))
+    # env.step(move_backward)
 
     # Turn counterclockwise.
 
     # Uncomment to debug.
     import pybullet as p
+
     while True:
         p.getMouseEvents(env._sim.physics_client_id)
