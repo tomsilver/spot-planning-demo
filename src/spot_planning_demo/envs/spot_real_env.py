@@ -41,6 +41,7 @@ from spatialmath import SE3
 
 from spot_planning_demo.spot_utils.perception.spot_cameras import capture_images
 from spot_planning_demo.spot_utils.skills.spot_hand_move import gaze_at_relative_pose, stow_arm
+from spot_planning_demo.spot_utils.skills.spot_grasp import grasp_at_pixel
 from spot_planning_demo.spot_utils.skills.spot_navigation import (
     navigate_to_absolute_pose,
 )
@@ -122,16 +123,17 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         self.localizer.localize()
 
         # Create the object pose detector.
-        detector_2d: ObjectDetector2D = GeminiObjectDetector2D()
+        self._object_detector: ObjectDetector2D = GeminiObjectDetector2D()
         if self.scene_description.object_detector_artifact_path is not None:
-            detector_2d = RenderWrapperObjectDetector2D(
-                detector_2d, self.scene_description.object_detector_artifact_path
+            self._object_detector = RenderWrapperObjectDetector2D(
+                self._object_detector, self.scene_description.object_detector_artifact_path
             )
-        self._pose_detector = Simple2DPoseDetector6D(detector_2d)
-        self._pose_detector_object_ids = [
+        self._pose_detector = Simple2DPoseDetector6D(self._object_detector)
+        self._perception_object_ids = [
             LanguageObjectDetectionID(TIGER_TOY_OBJECT.name),
             LanguageObjectDetectionID(CARDBOARD_TABLE_OBJECT.name),
         ]
+        self._object_name_to_perception_id = {o.language_id for o in self._perception_object_ids}
 
         # Track objects.
         self._objects_to_track = {TIGER_TOY_OBJECT, CARDBOARD_TABLE_OBJECT}
@@ -212,7 +214,7 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
                 rgbd_with_context.rgb, rgbd_with_context.depth
             )
         detections = self._pose_detector.detect(
-            cam_to_rgbd, self._pose_detector_object_ids
+            cam_to_rgbd, self._perception_object_ids
         )
         object_to_detected_poses: dict[Object, list[Pose]] = {
             o: [] for o in self._objects_to_track
@@ -279,6 +281,27 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         gaze_target = Vec3(target_se3_pose.x, target_se3_pose.y, target_se3_pose.z)
         rel_gaze_target_body = robot_se3_pose.inverse().transform_vec3(gaze_target)
         gaze_at_relative_pose(self.robot, rel_gaze_target_body)
+
+        # Take a new hand camera image.
+        rgbds = capture_images(self.robot, self.localizer, camera_names=["hand_camera"])
+        rgbd = rgbds["hand_camera"]
+        rgb = rgbd.rgb
+
+        # Run object detection.
+        perception_id = self._object_name_to_perception_id[object_name]
+        detections = self._object_detector.detect([rgbd.rgb], [perception_id])
+        assert len(detections) == 1
+        assert len(detections[0]) == 1, f"Object {object_name} not found in hand camera"
+        detection = detections[0][0]
+
+        # Select a random valid pixel from the mask.
+        mask = detection.get_image_mask(rgb.shape[0], rgb.shape[1])
+        pixels_in_mask = np.where(mask)
+        mask_idx = self.np_random.choice(len(pixels_in_mask))
+        pixel = (pixels_in_mask[1][mask_idx], pixels_in_mask[0][mask_idx])
+
+        # Run grasping.
+        grasp_at_pixel(self.robot, rgbd, pixel)
 
         # Stow the arm.
         stow_arm(self.robot)
