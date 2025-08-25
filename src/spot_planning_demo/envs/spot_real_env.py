@@ -6,17 +6,13 @@ NOTE: the origin (0, 0, 0) is Spot facing towards the table, and:
     - +z is facing up
 """
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, SupportsFloat, TypeAlias
 
 import gymnasium
 import numpy as np
-from bosdyn.client import create_standard_sdk
-from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
-from bosdyn.client.math_helpers import SE2Pose
-from bosdyn.client.util import authenticate
+from bosdyn.client.math_helpers import SE2Pose, SE3Pose, Vec3
 from prpl_perception_utils.object_detection_2d.base_object_detector_2d import (
     ObjectDetector2D,
 )
@@ -40,13 +36,20 @@ from relational_structs.utils import create_state_from_dict
 from spatialmath import SE3
 
 from spot_planning_demo.spot_utils.perception.spot_cameras import capture_images
+from spot_planning_demo.spot_utils.skills.spot_grasp import grasp_at_pixel
+from spot_planning_demo.spot_utils.skills.spot_hand_move import (
+    gaze_at_relative_pose,
+    open_gripper,
+    stow_arm,
+)
 from spot_planning_demo.spot_utils.skills.spot_navigation import (
     navigate_to_absolute_pose,
 )
 from spot_planning_demo.spot_utils.spot_localization import SpotLocalizer
-from spot_planning_demo.spot_utils.utils import verify_estop
+from spot_planning_demo.spot_utils.utils import initialize_robot_with_lease
 from spot_planning_demo.structs import (
     CARDBOARD_TABLE_OBJECT,
+    HUMAN_OBJECT,
     ROBOT_OBJECT,
     TIGER_TOY_OBJECT,
     TYPE_FEATURES,
@@ -67,6 +70,7 @@ class SpotRealEnvSpec:
     graph_nav_map: Path = (
         Path(__file__).parents[3] / "graph_nav_maps" / "prpl_fwing_test_map"
     )
+    robot_base_pose: Pose = Pose.from_rpy((2.287, -0.339, -0.33), (0, 0, 1.421))
     sdk_client_name: str = "SpotPlanningDemoClient"
 
     object_detector_artifact_path: Path | None = (
@@ -96,17 +100,8 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         self.scene_description = scene_description
 
         # Create the interface to the spot robot.
-        sdk = create_standard_sdk(self.scene_description.sdk_client_name)
-        if "BOSDYN_IP" not in os.environ:
-            raise KeyError("BOSDYN_IP not found in os.environ")
-        hostname = os.environ.get("BOSDYN_IP")
-        self.robot = sdk.create_robot(hostname)
-        authenticate(self.robot)
-        verify_estop(self.robot)
-        lease_client = self.robot.ensure_client(LeaseClient.default_service_name)
-        lease_client.take()
-        lease_keepalive = LeaseKeepAlive(
-            lease_client, must_acquire=True, return_at_exit=True
+        self.robot, lease_client, lease_keepalive = initialize_robot_with_lease(
+            client_name=self.scene_description.sdk_client_name
         )
 
         # Create the localizer.
@@ -116,23 +111,31 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
             lease_client,
             lease_keepalive,
         )
-        self.robot.time_sync.wait_for_sync()
         self.localizer.localize()
 
-        # Create the object pose detector.
-        detector_2d: ObjectDetector2D = GeminiObjectDetector2D()
-        if self.scene_description.object_detector_artifact_path is not None:
-            detector_2d = RenderWrapperObjectDetector2D(
-                detector_2d, self.scene_description.object_detector_artifact_path
-            )
-        self._pose_detector = Simple2DPoseDetector6D(detector_2d)
-        self._pose_detector_object_ids = [
-            LanguageObjectDetectionID(TIGER_TOY_OBJECT.name),
-            LanguageObjectDetectionID(CARDBOARD_TABLE_OBJECT.name),
-        ]
-
         # Track objects.
+        self._objects_to_track = {
+            TIGER_TOY_OBJECT,
+            CARDBOARD_TABLE_OBJECT,
+            HUMAN_OBJECT,
+        }
+        self._object_name_to_object = {o.name: o for o in self._objects_to_track}
         self._last_known_object_poses: dict[Object, Pose] = {}
+
+        # Create the object pose detector.
+        self._object_detector: ObjectDetector2D = GeminiObjectDetector2D()
+        if self.scene_description.object_detector_artifact_path is not None:
+            self._object_detector = RenderWrapperObjectDetector2D(
+                self._object_detector,
+                self.scene_description.object_detector_artifact_path,
+            )
+        self._pose_detector = Simple2DPoseDetector6D(self._object_detector)
+        self._perception_object_ids = [
+            LanguageObjectDetectionID(o.name) for o in self._objects_to_track
+        ]
+        self._object_name_to_perception_id = {
+            o.language_id: o for o in self._perception_object_ids
+        }
 
     def reset(
         self,
@@ -140,6 +143,12 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         seed: int | None = None,
         options: dict[str, Any] | None = None,
     ) -> tuple[ObjectCentricState, dict[str, Any]]:
+
+        # Stow the arm.
+        stow_arm(self.robot)
+
+        # Move to home.
+        self._step_move_base(self.scene_description.robot_base_pose)
 
         return self._get_obs(), {}
 
@@ -157,7 +166,7 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
             self._step_place(action.surface_name, action.placement_pose)
 
         elif isinstance(action, HandOver):
-            self._step_hand_over(action.pose)
+            self._step_hand_over()
 
         else:
             raise NotImplementedError
@@ -202,13 +211,12 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
                 rgbd_with_context.rgb, rgbd_with_context.depth
             )
         detections = self._pose_detector.detect(
-            cam_to_rgbd, self._pose_detector_object_ids
+            cam_to_rgbd, self._perception_object_ids
         )
-        objects_to_track = {TIGER_TOY_OBJECT, CARDBOARD_TABLE_OBJECT}
         object_to_detected_poses: dict[Object, list[Pose]] = {
-            o: [] for o in objects_to_track
+            o: [] for o in self._objects_to_track
         }
-        object_id_to_object = {o.name: o for o in objects_to_track}
+        object_id_to_object = {o.name: o for o in self._objects_to_track}
         for camera_detections in detections.values():
             for detection in camera_detections:
                 assert isinstance(detection.object_id, LanguageObjectDetectionID)
@@ -219,7 +227,7 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
                 )
                 object_to_detected_poses[obj].append(pose)
         # Average poses or use the last known pose if none are found.
-        for obj in objects_to_track:
+        for obj in self._objects_to_track:
             detected_poses = object_to_detected_poses[obj]
             if not detected_poses:
                 assert obj in self._last_known_object_poses
@@ -252,14 +260,59 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         )
         navigate_to_absolute_pose(self.robot, self.localizer, desired_pose_se2)
 
-    def _step_pick(self, object_name: str, end_effector_to_grasp_pose: Pose) -> None:
-        pass
+    def _step_pick(
+        self, object_name: str, end_effector_to_grasp_pose: Pose | None
+    ) -> None:
+
+        assert end_effector_to_grasp_pose is None, "TODO"
+
+        # Get robot pose.
+        robot_se3_pose = self.localizer.get_last_robot_pose()
+
+        # Get target pose.
+        obj = self._object_name_to_object[object_name]
+        target_pose = self._last_known_object_poses[obj]
+        target_se3_pose = SE3Pose.from_matrix(target_pose.to_matrix())
+
+        # Gaze.
+        gaze_target = Vec3(target_se3_pose.x, target_se3_pose.y, target_se3_pose.z)
+        rel_gaze_target_body = robot_se3_pose.inverse().transform_vec3(gaze_target)
+        gaze_at_relative_pose(self.robot, rel_gaze_target_body)
+
+        # Take a new hand camera image.
+        hand_camera_name = "hand_color_image"
+        rgbds = capture_images(
+            self.robot, self.localizer, camera_names=[hand_camera_name]
+        )
+        rgbd = rgbds[hand_camera_name]
+        rgb = rgbd.rgb
+
+        # Run object detection.
+        perception_id = self._object_name_to_perception_id[object_name]
+        detections = self._object_detector.detect([rgbd.rgb], [perception_id])
+        assert len(detections) == 1
+        assert len(detections[0]) == 1, f"Object {object_name} not found in hand camera"
+        detection = detections[0][0]
+
+        # Select a random valid pixel from the mask.
+        mask = detection.get_image_mask(rgb.shape[0], rgb.shape[1])
+        pixels_in_mask = np.where(mask)
+        mask_idx = self.np_random.choice(len(pixels_in_mask))
+        pixel = (pixels_in_mask[1][mask_idx], pixels_in_mask[0][mask_idx])
+
+        # Run grasping.
+        grasp_at_pixel(self.robot, rgbd, pixel)
+
+        # Stow the arm.
+        stow_arm(self.robot)
 
     def _step_place(self, surface_name: str, pose: Pose) -> None:
         pass
 
-    def _step_hand_over(self, pose: Pose) -> None:
-        pass
+    def _step_hand_over(self) -> None:
+        # Open the gripper.
+        open_gripper(self.robot)
+        # Later, do something else too.
 
     def _get_robot_pose(self) -> Pose:
         self.localizer.localize()
