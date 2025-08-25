@@ -16,9 +16,15 @@ from pybullet_helpers.inverse_kinematics import (
 from pybullet_helpers.robots import create_pybullet_robot
 from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
 from pybullet_helpers.utils import create_pybullet_block
+from relational_structs import Object, ObjectCentricState
+from relational_structs.utils import create_state_from_dict
 
 from spot_planning_demo.structs import (
     BANISH_POSE,
+    CARDBOARD_TABLE_OBJECT,
+    ROBOT_OBJECT,
+    TIGER_TOY_OBJECT,
+    TYPE_FEATURES,
     HandOver,
     MoveBase,
     Pick,
@@ -26,7 +32,6 @@ from spot_planning_demo.structs import (
     SpotAction,
 )
 
-ObsType: TypeAlias = Any  # coming soon
 RenderFrame: TypeAlias = Any
 
 
@@ -38,20 +43,27 @@ class ActionFailure(BaseException):
 class SpotPybulletSimSpec:
     """Scene description for SpotPyBulletSim()."""
 
-    # Robot.
-    robot_base_pose: Pose = Pose.identity()
+    # Robot, with pose taken from real.
+    robot_base_pose: Pose = Pose.from_rpy((2.287, -0.339, -0.33), (0, 0, 1.421))
 
     # Floor.
     floor_color: tuple[float, float, float, float] = (0.3, 0.3, 0.3, 1.0)
     floor_half_extents: tuple[float, float, float] = (3, 3, 0.001)
-    floor_pose: Pose = Pose((0, 0, -floor_half_extents[2]))
+    floor_pose: Pose = Pose(
+        (
+            robot_base_pose.position[0],
+            robot_base_pose.position[1],
+            robot_base_pose.position[2] - floor_half_extents[2],
+        )
+    )
 
     # Table.
-    table_half_extents: tuple[float, float, float] = (0.3, 0.4, 0.3)
-    table_pose: Pose = Pose((1.0, 0.0, table_half_extents[2]))
+    table_half_extents: tuple[float, float, float] = (0.2, 0.1, 0.05)
+    table_pose: Pose = Pose((2.3, 0.7, floor_pose.position[2] + table_half_extents[2]))
     table_color: tuple[float, float, float, float] = (0.6, 0.3, 0.1, 1.0)
 
     # Shelf ceiling, forcing a side grasp and possibly forcing removal of obstacles.
+    # This is currently disabled (with a very high pose.)
     shelf_ceiling_half_extents: tuple[float, float, float] = (
         table_half_extents[0],
         table_half_extents[1],
@@ -61,7 +73,9 @@ class SpotPybulletSimSpec:
         (
             table_pose.position[0],
             table_pose.position[1],
-            table_pose.position[2] + table_half_extents[2] + 0.25,
+            # Comment back to make this active again.
+            # table_pose.position[2] + table_half_extents[2] + 0.25,
+            1000,
         ),
         table_pose.orientation,
     )
@@ -86,16 +100,19 @@ class SpotPybulletSimSpec:
     )
 
     # Green block.
+    # This is currently disabled (banish pose).
     green_block_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.05)
-    green_block_init_pose: Pose = Pose(
-        (
-            table_pose.position[0] - table_half_extents[0] / 2,
-            table_pose.position[1] + table_half_extents[1] / 2,
-            table_pose.position[2]
-            + table_half_extents[2]
-            + green_block_half_extents[2],
-        )
-    )
+    green_block_init_pose: Pose = BANISH_POSE
+    # Comment this back to make it active again.
+    # green_block_init_pose: Pose = Pose(
+    #     (
+    #         table_pose.position[0] - table_half_extents[0] / 2,
+    #         table_pose.position[1] + table_half_extents[1] / 2,
+    #         table_pose.position[2]
+    #         + table_half_extents[2]
+    #         + green_block_half_extents[2],
+    #     )
+    # )
     green_block_color: tuple[float, float, float, float] = (
         10 / 255,
         222 / 255,
@@ -105,7 +122,10 @@ class SpotPybulletSimSpec:
 
     # Drop zone.
     drop_zone_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.025)
-    drop_zone_pose: Pose = Pose((-0.75, -0.75, 0.75))
+    # On the left of the initial pose.
+    drop_zone_pose: Pose = Pose(
+        (robot_base_pose.position[0] - 1.0, robot_base_pose.position[1], 0.75)
+    )
     drop_zone_color: tuple[float, float, float, float] = (
         255 / 255,
         121 / 255,
@@ -134,7 +154,7 @@ class SpotPybulletSimSpec:
         }
 
 
-class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
+class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
     """PyBullet simulator for Spot demo environment."""
 
     metadata = {"render_modes": ["rgb_array"], "render_fps": 1}
@@ -250,12 +270,25 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
             self.shelf_ceiling_id,
         }
 
+        # Map objects to pybullet IDs.
+        self._object_to_pybullet_id = {
+            TIGER_TOY_OBJECT: self.purple_block_id,
+            CARDBOARD_TABLE_OBJECT: self.table_id,
+        }
+
+        # Indicate which features should update for which objects when the state is
+        # manually set. This is importnat for the sim viz wrapper.
+        self._object_to_state_set_features = {
+            TIGER_TOY_OBJECT: ["x", "y", "z"],
+            CARDBOARD_TABLE_OBJECT: ["x", "y"],
+        }
+
     def reset(
         self,
         *,
         seed: int | None = None,
         options: dict[str, Any] | None = None,
-    ) -> tuple[ObsType, dict[str, Any]]:
+    ) -> tuple[ObjectCentricState, dict[str, Any]]:
 
         # Reset the robot.
         self.robot.set_base(self.scene_description.robot_base_pose)
@@ -279,11 +312,11 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         self._current_held_object_id = None
         self._current_held_object_transform = None
 
-        return None, {}
+        return self._get_obs(), {}
 
     def step(
         self, action: SpotAction
-    ) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
+    ) -> tuple[ObjectCentricState, SupportsFloat, bool, bool, dict[str, Any]]:
 
         if isinstance(action, MoveBase):
             self._step_move_base(action.pose)
@@ -313,11 +346,69 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
                 self.physics_client_id,
             )
 
-        return None, 0.0, False, False, {}
+        return self._get_obs(), 0.0, False, False, {}
 
     def render(self) -> RenderFrame | list[RenderFrame] | None:
         """Coming soon."""
         return None
+
+    def set_state(self, state: ObjectCentricState) -> None:
+        """Sync the simulation to the given state."""
+        # Set the robot state.
+        default_robot_base_pose = self.robot.get_base_pose()
+        robot_base_x = state.get(ROBOT_OBJECT, "base_x")
+        robot_base_y = state.get(ROBOT_OBJECT, "base_y")
+        robot_base_rot = state.get(ROBOT_OBJECT, "base_rot")
+        new_robot_base_pose = Pose.from_rpy(
+            (robot_base_x, robot_base_y, default_robot_base_pose.position[2]),
+            (
+                default_robot_base_pose.rpy[0],
+                default_robot_base_pose.rpy[1],
+                robot_base_rot,
+            ),
+        )
+        self.robot.set_base(new_robot_base_pose)
+        # Set the object states.
+        all_pose_feats = ["x", "y", "z", "qx", "qy", "qz", "qw"]
+        for obj, feats in self._object_to_state_set_features.items():
+            pybullet_id = self._object_to_pybullet_id[obj]
+            current_sim_pose = get_pose(pybullet_id, self.physics_client_id)
+            feat_vals = list(current_sim_pose.position) + list(
+                current_sim_pose.orientation
+            )
+            for feat in feats:
+                feat_idx = all_pose_feats.index(feat)
+                feat_vals[feat_idx] = state.get(obj, feat)
+            pose = Pose(
+                (feat_vals[0], feat_vals[1], feat_vals[2]),
+                (feat_vals[3], feat_vals[4], feat_vals[5], feat_vals[6]),
+            )
+            set_pose(pybullet_id, pose, self.physics_client_id)
+
+    def _get_obs(self) -> ObjectCentricState:
+
+        # Get the robot state.
+        robot_base_pose = self.robot.get_base_pose()
+        robot_state_dict = {
+            "base_x": robot_base_pose.position[0],
+            "base_y": robot_base_pose.position[1],
+            "base_rot": robot_base_pose.rpy[2],
+        }
+
+        # Finish the state.
+        state_dict: dict[Object, dict[str, float]] = {ROBOT_OBJECT: robot_state_dict}
+        for obj, pybullet_id in self._object_to_pybullet_id.items():
+            pose = get_pose(pybullet_id, self.physics_client_id)
+            state_dict[obj] = {
+                "x": pose.position[0],
+                "y": pose.position[1],
+                "z": pose.position[2],
+                "qx": pose.orientation[0],
+                "qy": pose.orientation[1],
+                "qz": pose.orientation[2],
+                "qw": pose.orientation[3],
+            }
+        return create_state_from_dict(state_dict, TYPE_FEATURES)
 
     def _step_move_base(self, new_pose: Pose) -> None:
         # Store the current robot pose in case we need to change it back.
