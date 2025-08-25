@@ -26,8 +26,8 @@ from spot_planning_demo.structs import (
     MoveBase,
     Pick,
     Place,
-    RobotType,
     SpotAction,
+    ROBOT_OBJECT,
 )
 
 RenderFrame: TypeAlias = Any
@@ -268,9 +268,6 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
             self.shelf_ceiling_id,
         }
 
-        # Create constant objects for object-centric state.
-        self._robot_object = Object("spot", RobotType)
-
     def reset(
         self,
         *,
@@ -344,9 +341,9 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
         """Sync the simulation to the given state."""
         # Set the robot state.
         default_robot_base_pose = self.robot.get_base_pose()
-        robot_base_x = state.get(self._robot_object, "base_x")
-        robot_base_y = state.get(self._robot_object, "base_y")
-        robot_base_rot = state.get(self._robot_object, "base_rot")
+        robot_base_x = state.get(ROBOT_OBJECT, "base_x")
+        robot_base_y = state.get(ROBOT_OBJECT, "base_y")
+        robot_base_rot = state.get(ROBOT_OBJECT, "base_rot")
         new_robot_base_pose = Pose.from_rpy(
             (robot_base_x, robot_base_y, default_robot_base_pose.position[2]),
             (
@@ -369,7 +366,7 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
 
         # Finish the state.
         state_dict: dict[Object, dict[str, float]] = {
-            self._robot_object: robot_state_dict
+            ROBOT_OBJECT: robot_state_dict
         }
         return create_state_from_dict(state_dict, TYPE_FEATURES)
 

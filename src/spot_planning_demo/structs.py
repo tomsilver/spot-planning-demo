@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from pybullet_helpers.geometry import Pose
-from relational_structs import Type
+from relational_structs import Type, Object
 
 BANISH_POSE = Pose((-10000, -10000, -10000))
 
@@ -45,7 +45,14 @@ class HandOver(SpotAction):
 # Object types.
 RobotType = Type("robot")
 MovableObjectType = Type("movable_object")
+ImmovableObjectType = Type("immovable_object")
 TYPE_FEATURES = {
     RobotType: ["base_x", "base_y", "base_rot"],
     MovableObjectType: ["x", "y", "z", "qx", "qy", "qz", "qw"],
+    ImmovableObjectType: ["x", "y", "z", "qx", "qy", "qz", "qw"],
 }
+
+# Constant objects.
+ROBOT_OBJECT = Object("spot", RobotType)
+TIGER_TOY = Object("stuffed animal toy tiger", MovableObjectType)
+CARDBOARD_TABLE = Object("small cardboard box on the floor", MovableObjectType)

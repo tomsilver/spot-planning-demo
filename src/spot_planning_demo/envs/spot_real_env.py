@@ -31,7 +31,7 @@ from spot_planning_demo.structs import (
     MoveBase,
     Pick,
     Place,
-    RobotType,
+    ROBOT_OBJECT,
     SpotAction,
 )
 
@@ -91,9 +91,6 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         self.robot.time_sync.wait_for_sync()
         self.localizer.localize()
 
-        # Create constant objects for object-centric state.
-        self._robot_object = Object("spot", RobotType)
-
     def reset(
         self,
         *,
@@ -140,7 +137,7 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
 
         # Finish the state.
         state_dict: dict[Object, dict[str, float]] = {
-            self._robot_object: robot_state_dict
+            ROBOT_OBJECT: robot_state_dict
         }
         return create_state_from_dict(state_dict, TYPE_FEATURES)
 
