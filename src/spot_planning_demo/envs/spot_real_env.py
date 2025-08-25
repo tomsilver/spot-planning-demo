@@ -17,14 +17,23 @@ from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
 from bosdyn.client.math_helpers import SE2Pose
 from bosdyn.client.util import authenticate
 from pybullet_helpers.geometry import Pose
-from relational_structs import ObjectCentricState
+from relational_structs import Object, ObjectCentricState
+from relational_structs.utils import create_state_from_dict
 
 from spot_planning_demo.spot_utils.skills.spot_navigation import (
     navigate_to_absolute_pose,
 )
 from spot_planning_demo.spot_utils.spot_localization import SpotLocalizer
 from spot_planning_demo.spot_utils.utils import verify_estop
-from spot_planning_demo.structs import HandOver, MoveBase, Pick, Place, SpotAction
+from spot_planning_demo.structs import (
+    TYPE_FEATURES,
+    HandOver,
+    MoveBase,
+    Pick,
+    Place,
+    RobotType,
+    SpotAction,
+)
 
 RenderFrame: TypeAlias = Any
 
@@ -83,14 +92,15 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         self.robot.time_sync.wait_for_sync()
         self.localizer.localize()
 
+        # Create constant objects for object-centric state.
+        self._robot_object = Object("spot", RobotType)
+
     def reset(
         self,
         *,
         seed: int | None = None,
         options: dict[str, Any] | None = None,
     ) -> tuple[ObjectCentricState, dict[str, Any]]:
-
-        print("Current robot pose:", self._get_robot_pose())
 
         return self._get_obs(), {}
 
@@ -113,8 +123,6 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         else:
             raise NotImplementedError
 
-        print("Current robot pose:", self._get_robot_pose())
-
         return self._get_obs(), 0.0, False, False, {}
 
     def render(self) -> RenderFrame | list[RenderFrame] | None:
@@ -122,7 +130,20 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         return None
 
     def _get_obs(self) -> ObjectCentricState:
-        return ObjectCentricState({}, {})
+
+        # Get the robot state.
+        robot_base_pose = self._get_robot_pose()
+        robot_state_dict = {
+            "base_x": robot_base_pose.position[0],
+            "base_y": robot_base_pose.position[1],
+            "base_rot": robot_base_pose.rpy[2],
+        }
+
+        # Finish the state.
+        state_dict: dict[Object, dict[str, float]] = {
+            self._robot_object: robot_state_dict
+        }
+        return create_state_from_dict(state_dict, TYPE_FEATURES)
 
     def _step_move_base(self, new_pose: Pose) -> None:
         desired_world_pose_se2 = SE2Pose(
