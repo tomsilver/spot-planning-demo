@@ -27,25 +27,25 @@ def test_spot_real_custom_action_sequence():
     """Tests a custom action sequence."""
     env = SpotRealEnv()
     spec = env.scene_description
-    env.reset(seed=123)
+    obs, _ = env.reset(seed=123)
 
     # Create a GUI visualizer.
     env = SpotSimVizWrapper(env)
 
     # Pick the toy tiger. Assumes that it is in view.
     pick_tiger = Pick(TIGER_TOY_OBJECT.name)
-    env.step(pick_tiger)
+    obs, _, _, _, _ = env.step(pick_tiger)
 
     # Move back to the origin.
     move_to_origin = MoveBase(spec.robot_base_pose)
     obs, _, _, _, _ = env.step(move_to_origin)
 
     # For fun: move to human.
-    robot_x = obs.get(ROBOT_OBJECT, "x")
-    robot_y = obs.get(ROBOT_OBJECT, "y")
+    robot_x = obs.get(ROBOT_OBJECT, "base_x")
+    robot_y = obs.get(ROBOT_OBJECT, "base_y")
     human_x = obs.get(HUMAN_OBJECT, "x")
     human_y = obs.get(HUMAN_OBJECT, "y")
-    d = 0.75  # standoff distance [m]
+    d = 1.0  # standoff distance [m]
     theta = np.arctan2(human_y - robot_y, human_x - robot_x)
     x = human_x - d * np.cos(theta)
     y = human_y - d * np.sin(theta)
