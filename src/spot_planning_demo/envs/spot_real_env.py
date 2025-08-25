@@ -12,18 +12,19 @@ from pathlib import Path
 from typing import Any, SupportsFloat, TypeAlias
 
 import gymnasium
+import numpy as np
 from bosdyn.client import create_standard_sdk
 from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
 from bosdyn.client.math_helpers import SE2Pose
 from bosdyn.client.util import authenticate
+from prpl_perception_utils.object_detection_2d.base_object_detector_2d import (
+    ObjectDetector2D,
+)
 from prpl_perception_utils.object_detection_2d.gemini_object_detector_2d import (
     GeminiObjectDetector2D,
 )
 from prpl_perception_utils.object_detection_2d.render_wrapper import (
     RenderWrapperObjectDetector2D,
-)
-from prpl_perception_utils.object_detection_2d.base_object_detector_2d import (
-    ObjectDetector2D,
 )
 from prpl_perception_utils.pose_detection_6d.simple_2d_pose_detector_6d import (
     Simple2DPoseDetector6D,
@@ -36,6 +37,7 @@ from prpl_perception_utils.structs import (
 from pybullet_helpers.geometry import Pose
 from relational_structs import Object, ObjectCentricState
 from relational_structs.utils import create_state_from_dict
+from spatialmath import SE3
 
 from spot_planning_demo.spot_utils.perception.spot_cameras import capture_images
 from spot_planning_demo.spot_utils.skills.spot_navigation import (
@@ -127,6 +129,9 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
             LanguageObjectDetectionID(TIGER_TOY_OBJECT.name),
         ]
 
+        # Track objects.
+        self._last_known_object_poses: dict[Object, Pose] = {}
+
     def reset(
         self,
         *,
@@ -189,21 +194,54 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
                 (fx, fy),
                 (cx, cy),
                 rgbd_with_context.depth_scale,
-                rgbd_with_context.world_tform_camera,
+                SE3(rgbd_with_context.world_tform_camera.to_matrix()),
             )
-            # TODO: rotate?
             cam_to_rgbd[cam_info] = RGBDImage(
                 rgbd_with_context.rgb, rgbd_with_context.depth
             )
         detections = self._pose_detector.detect(
             cam_to_rgbd, self._pose_detector_object_ids
         )
-        import ipdb
-
-        ipdb.set_trace()
+        objects_to_track = {TIGER_TOY_OBJECT}
+        object_to_detected_poses: dict[Object, list[Pose]] = {
+            o: [] for o in objects_to_track
+        }
+        object_id_to_object = {o.name: o for o in objects_to_track}
+        for camera_detections in detections.values():
+            for detection in camera_detections:
+                assert isinstance(detection.object_id, LanguageObjectDetectionID)
+                obj = object_id_to_object[detection.object_id.language_id]
+                pose = Pose.from_rpy(
+                    (detection.pose.x, detection.pose.y, detection.pose.z),
+                    detection.pose.rpy(),
+                )
+                object_to_detected_poses[obj].append(pose)
+        # Average poses or use the last known pose if none are found.
+        for obj in objects_to_track:
+            detected_poses = object_to_detected_poses[obj]
+            if not detected_poses:
+                assert obj in self._last_known_object_poses
+                pose = self._last_known_object_poses[obj]
+            else:
+                mean_pos = np.mean([pose.position for pose in detected_poses], axis=0)
+                mean_quat = np.mean(
+                    [pose.orientation for pose in detected_poses], axis=0
+                )
+                pose = Pose(tuple(mean_pos), tuple(mean_quat))
+            self._last_known_object_poses[obj] = pose
 
         # Finish the state.
         state_dict: dict[Object, dict[str, float]] = {ROBOT_OBJECT: robot_state_dict}
+        for obj, pose in self._last_known_object_poses.items():
+            state_dict[obj] = {
+                "x": pose.position[0],
+                "y": pose.position[1],
+                "z": pose.position[2],
+                "qx": pose.orientation[0],
+                "qy": pose.orientation[1],
+                "qz": pose.orientation[2],
+                "qw": pose.orientation[3],
+            }
         return create_state_from_dict(state_dict, TYPE_FEATURES)
 
     def _step_move_base(self, new_pose: Pose) -> None:

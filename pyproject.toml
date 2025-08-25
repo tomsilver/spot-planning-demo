@@ -69,5 +69,6 @@ module = [
     "scipy.*",
     "google.*",
     "dill.*",
+    "spatialmath.*",
 ]
 ignore_missing_imports = true
