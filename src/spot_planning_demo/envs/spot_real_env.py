@@ -1,7 +1,5 @@
 """Real environment for Spot that mirrors spot_pybullet_env.
 
-# TODO: CHANGE SIM TO MATCH THE BELOW CONVENTION
-
 NOTE: the origin (0, 0, 0) is Spot facing towards the table, and:
     - +x is facing right
     - +y is facing forward
@@ -92,7 +90,6 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
         options: dict[str, Any] | None = None,
     ) -> tuple[ObsType, dict[str, Any]]:
 
-        # TODO remove
         print("Current robot pose:", self._get_robot_pose())
 
         return None, {}
@@ -116,7 +113,6 @@ class SpotRealEnv(gymnasium.Env[ObsType, SpotAction]):
         else:
             raise NotImplementedError
 
-        # TODO remove
         print("Current robot pose:", self._get_robot_pose())
 
         return None, 0.0, False, False, {}

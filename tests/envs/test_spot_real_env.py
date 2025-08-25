@@ -3,18 +3,16 @@
 NOTE: all these tests are disabled in CI.
 """
 
-import os
-
 import pytest
 from pybullet_helpers.geometry import Pose
 
 from spot_planning_demo.envs.spot_real_env import SpotRealEnv
 from spot_planning_demo.structs import MoveBase
 
+runreal = pytest.mark.skipif("not config.getoption('runreal')")
 
-@pytest.mark.skipif(
-    "BOSDYN_CLIENT_USERNAME" not in os.environ, reason="Can't run real robot in CI"
-)
+
+@runreal
 def test_spot_pybullet_move_base():
     """Tests for MoveBase()."""
     env = SpotRealEnv()
