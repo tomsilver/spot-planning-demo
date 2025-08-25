@@ -16,6 +16,7 @@ dependencies = [
    "opencv-python == 4.7.0.72",
    "scipy",
    "types-requests",
+   "bosdyn-client",
 ]
 
 [project.optional-dependencies]
