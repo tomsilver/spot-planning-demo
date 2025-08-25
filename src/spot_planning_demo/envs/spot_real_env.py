@@ -133,7 +133,7 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
             LanguageObjectDetectionID(TIGER_TOY_OBJECT.name),
             LanguageObjectDetectionID(CARDBOARD_TABLE_OBJECT.name),
         ]
-        self._object_name_to_perception_id = {o.language_id for o in self._perception_object_ids}
+        self._object_name_to_perception_id = {o.language_id: o for o in self._perception_object_ids}
 
         # Track objects.
         self._objects_to_track = {TIGER_TOY_OBJECT, CARDBOARD_TABLE_OBJECT}
@@ -147,12 +147,12 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         options: dict[str, Any] | None = None,
     ) -> tuple[ObjectCentricState, dict[str, Any]]:
         
-        # Move to home.
-        self._step_move_base(self.scene_description.robot_base_pose)
-        
         # Stow the arm.
         stow_arm(self.robot)
 
+        # Move to home.
+        self._step_move_base(self.scene_description.robot_base_pose)
+        
         return self._get_obs(), {}
 
     def step(
@@ -283,8 +283,9 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         gaze_at_relative_pose(self.robot, rel_gaze_target_body)
 
         # Take a new hand camera image.
-        rgbds = capture_images(self.robot, self.localizer, camera_names=["hand_camera"])
-        rgbd = rgbds["hand_camera"]
+        hand_camera_name = "hand_color_image"
+        rgbds = capture_images(self.robot, self.localizer, camera_names=[hand_camera_name])
+        rgbd = rgbds[hand_camera_name]
         rgb = rgbd.rgb
 
         # Run object detection.
