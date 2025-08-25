@@ -23,6 +23,8 @@ from spot_planning_demo.structs import (
     BANISH_POSE,
     ROBOT_OBJECT,
     TYPE_FEATURES,
+    CARDBOARD_TABLE_OBJECT,
+    TIGER_TOY_OBJECT,
     HandOver,
     MoveBase,
     Pick,
@@ -42,7 +44,7 @@ class SpotPybulletSimSpec:
     """Scene description for SpotPyBulletSim()."""
 
     # Robot, with pose taken from real.
-    robot_base_pose: Pose = Pose.from_rpy((2.287, -0.339, 0), (0, 0, 1.421))
+    robot_base_pose: Pose = Pose.from_rpy((2.287, -0.339, -0.33), (0, 0, 1.421))
 
     # Floor.
     floor_color: tuple[float, float, float, float] = (0.3, 0.3, 0.3, 1.0)
@@ -51,13 +53,13 @@ class SpotPybulletSimSpec:
         (
             robot_base_pose.position[0],
             robot_base_pose.position[1],
-            -floor_half_extents[2],
+            robot_base_pose.position[2] - floor_half_extents[2],
         )
     )
 
     # Table.
     table_half_extents: tuple[float, float, float] = (0.2, 0.1, 0.05)
-    table_pose: Pose = Pose((2.3, 0.7, table_half_extents[2]))
+    table_pose: Pose = Pose((2.3, 0.7, floor_pose.position[2] + table_half_extents[2]))
     table_color: tuple[float, float, float, float] = (0.6, 0.3, 0.1, 1.0)
 
     # Shelf ceiling, forcing a side grasp and possibly forcing removal of obstacles.
@@ -268,6 +270,19 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
             self.shelf_ceiling_id,
         }
 
+        # Map objects to pybullet IDs.
+        self._object_to_pybullet_id = {
+            TIGER_TOY_OBJECT: self.purple_block_id,
+            CARDBOARD_TABLE_OBJECT: self.table_id,
+        }
+
+        # Indicate which features should update for which objects when the state is
+        # manually set. This is importnat for the sim viz wrapper.
+        self._object_to_state_set_features = {
+            TIGER_TOY_OBJECT: ["x", "y", "z"],
+            CARDBOARD_TABLE_OBJECT: ["x", "y"],
+        }
+
     def reset(
         self,
         *,
@@ -353,6 +368,17 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
             ),
         )
         self.robot.set_base(new_robot_base_pose)
+        # Set the object states.
+        all_pose_feats = ["x", "y", "z", "qx", "qy", "qz", "qw"]
+        for obj, feats in self._object_to_state_set_features.items():
+            pybullet_id = self._object_to_pybullet_id[obj]
+            current_sim_pose = get_pose(pybullet_id, self.physics_client_id)
+            feat_vals = list(current_sim_pose.position) + list(current_sim_pose.orientation)
+            for feat in feats:
+                feat_idx = all_pose_feats.index(feat)
+                feat_vals[feat_idx] = state.get(obj, feat)
+            pose = Pose(tuple(feat_vals[:3]), tuple(feat_vals[3:]))
+            set_pose(pybullet_id, pose, self.physics_client_id)
 
     def _get_obs(self) -> ObjectCentricState:
 
@@ -366,6 +392,17 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
 
         # Finish the state.
         state_dict: dict[Object, dict[str, float]] = {ROBOT_OBJECT: robot_state_dict}
+        for obj, pybullet_id in self._object_to_pybullet_id.items():
+            pose = get_pose(pybullet_id, self.physics_client_id)
+            state_dict[obj] = {
+                "x": pose.position[0],
+                "y": pose.position[1],
+                "z": pose.position[2],
+                "qx": pose.orientation[0],
+                "qy": pose.orientation[1],
+                "qz": pose.orientation[2],
+                "qw": pose.orientation[3],
+            }
         return create_state_from_dict(state_dict, TYPE_FEATURES)
 
     def _step_move_base(self, new_pose: Pose) -> None:

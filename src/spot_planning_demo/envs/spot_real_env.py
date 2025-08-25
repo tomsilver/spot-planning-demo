@@ -48,6 +48,7 @@ from spot_planning_demo.spot_utils.utils import verify_estop
 from spot_planning_demo.structs import (
     ROBOT_OBJECT,
     TIGER_TOY_OBJECT,
+    CARDBOARD_TABLE_OBJECT,
     TYPE_FEATURES,
     HandOver,
     MoveBase,
@@ -127,6 +128,7 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         self._pose_detector = Simple2DPoseDetector6D(detector_2d)
         self._pose_detector_object_ids = [
             LanguageObjectDetectionID(TIGER_TOY_OBJECT.name),
+            LanguageObjectDetectionID(CARDBOARD_TABLE_OBJECT.name),
         ]
 
         # Track objects.
@@ -202,7 +204,7 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         detections = self._pose_detector.detect(
             cam_to_rgbd, self._pose_detector_object_ids
         )
-        objects_to_track = {TIGER_TOY_OBJECT}
+        objects_to_track = {TIGER_TOY_OBJECT, CARDBOARD_TABLE_OBJECT}
         object_to_detected_poses: dict[Object, list[Pose]] = {
             o: [] for o in objects_to_track
         }
