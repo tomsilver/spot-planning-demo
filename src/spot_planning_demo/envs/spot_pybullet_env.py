@@ -16,27 +16,21 @@ from pybullet_helpers.inverse_kinematics import (
 from pybullet_helpers.robots import create_pybullet_robot
 from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
 from pybullet_helpers.utils import create_pybullet_block
-from relational_structs import Object, ObjectCentricState, Type
+from relational_structs import Object, ObjectCentricState
 from relational_structs.utils import create_state_from_dict
 
 from spot_planning_demo.structs import (
     BANISH_POSE,
+    TYPE_FEATURES,
     HandOver,
     MoveBase,
     Pick,
     Place,
+    RobotType,
     SpotAction,
 )
 
 RenderFrame: TypeAlias = Any
-
-# Object types.
-RobotType = Type("robot")
-MovableObjectType = Type("movable_object")
-TYPE_FEATURES = {
-    RobotType: ["base_x", "base_y", "base_rot"],
-    MovableObjectType: ["x", "y", "z", "qx", "qy", "qz", "qw"],
-}
 
 
 class ActionFailure(BaseException):

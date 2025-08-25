@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from pybullet_helpers.geometry import Pose
+from relational_structs import Type
 
 BANISH_POSE = Pose((-10000, -10000, -10000))
 
@@ -39,3 +40,12 @@ class HandOver(SpotAction):
     """Pick an object."""
 
     pose: Pose  # absolute pose in world frame
+
+
+# Object types.
+RobotType = Type("robot")
+MovableObjectType = Type("movable_object")
+TYPE_FEATURES = {
+    RobotType: ["base_x", "base_y", "base_rot"],
+    MovableObjectType: ["x", "y", "z", "qx", "qy", "qz", "qw"],
+}
