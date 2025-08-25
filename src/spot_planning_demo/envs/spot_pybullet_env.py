@@ -144,7 +144,7 @@ class SpotPybulletSimSpec:
                 self.robot_base_pose.position[1],
                 self.robot_base_pose.position[2] + 0.5,
             ),
-            "camera_yaw": 0,
+            "camera_yaw": 90,
             "camera_distance": 1.5,
             "camera_pitch": -20,
             "background_rgb": (255, 255, 255),
