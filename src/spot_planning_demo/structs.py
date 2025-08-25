@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from pybullet_helpers.geometry import Pose
-from relational_structs import Type, Object
+from relational_structs import Object, Type
 
 BANISH_POSE = Pose((-10000, -10000, -10000))
 
@@ -54,5 +54,5 @@ TYPE_FEATURES = {
 
 # Constant objects.
 ROBOT_OBJECT = Object("spot", RobotType)
-TIGER_TOY = Object("stuffed animal toy tiger", MovableObjectType)
-CARDBOARD_TABLE = Object("small cardboard box on the floor", MovableObjectType)
+TIGER_TOY_OBJECT = Object("stuffed animal toy tiger", MovableObjectType)
+CARDBOARD_TABLE_OBJECT = Object("small cardboard box on the floor", MovableObjectType)

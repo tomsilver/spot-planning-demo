@@ -21,13 +21,13 @@ from relational_structs.utils import create_state_from_dict
 
 from spot_planning_demo.structs import (
     BANISH_POSE,
+    ROBOT_OBJECT,
     TYPE_FEATURES,
     HandOver,
     MoveBase,
     Pick,
     Place,
     SpotAction,
-    ROBOT_OBJECT,
 )
 
 RenderFrame: TypeAlias = Any
@@ -365,9 +365,7 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
         }
 
         # Finish the state.
-        state_dict: dict[Object, dict[str, float]] = {
-            ROBOT_OBJECT: robot_state_dict
-        }
+        state_dict: dict[Object, dict[str, float]] = {ROBOT_OBJECT: robot_state_dict}
         return create_state_from_dict(state_dict, TYPE_FEATURES)
 
     def _step_move_base(self, new_pose: Pose) -> None:

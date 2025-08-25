@@ -14,6 +14,7 @@ dependencies = [
    "pybullet==3.2.6",
    "pybullet_helpers@git+https://github.com/tomsilver/pybullet-helpers.git",
    "relational_structs@git+https://github.com/tomsilver/relational-structs.git",
+   "prpl_perception_utils@git+https://github.com/Princeton-Robot-Planning-and-Learning/prpl-perception-utils.git",
    "opencv-python == 4.7.0.72",
    "scipy",
    "types-requests",

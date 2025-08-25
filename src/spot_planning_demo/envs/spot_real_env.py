@@ -16,22 +16,41 @@ from bosdyn.client import create_standard_sdk
 from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
 from bosdyn.client.math_helpers import SE2Pose
 from bosdyn.client.util import authenticate
+from prpl_perception_utils.object_detection_2d.gemini_object_detector_2d import (
+    GeminiObjectDetector2D,
+)
+from prpl_perception_utils.object_detection_2d.render_wrapper import (
+    RenderWrapperObjectDetector2D,
+)
+from prpl_perception_utils.object_detection_2d.base_object_detector_2d import (
+    ObjectDetector2D,
+)
+from prpl_perception_utils.pose_detection_6d.simple_2d_pose_detector_6d import (
+    Simple2DPoseDetector6D,
+)
+from prpl_perception_utils.structs import (
+    CameraInfo,
+    LanguageObjectDetectionID,
+    RGBDImage,
+)
 from pybullet_helpers.geometry import Pose
 from relational_structs import Object, ObjectCentricState
 from relational_structs.utils import create_state_from_dict
 
+from spot_planning_demo.spot_utils.perception.spot_cameras import capture_images
 from spot_planning_demo.spot_utils.skills.spot_navigation import (
     navigate_to_absolute_pose,
 )
 from spot_planning_demo.spot_utils.spot_localization import SpotLocalizer
 from spot_planning_demo.spot_utils.utils import verify_estop
 from spot_planning_demo.structs import (
+    ROBOT_OBJECT,
+    TIGER_TOY_OBJECT,
     TYPE_FEATURES,
     HandOver,
     MoveBase,
     Pick,
     Place,
-    ROBOT_OBJECT,
     SpotAction,
 )
 
@@ -47,10 +66,16 @@ class SpotRealEnvSpec:
     )
     sdk_client_name: str = "SpotPlanningDemoClient"
 
+    object_detector_artifact_path: Path | None = (
+        Path(__file__).parents[3] / "object_detections"
+    )
+
     def __post_init__(self) -> None:
         assert (
             self.graph_nav_map.exists()
         ), f"Graph nav map directory not found: {self.graph_nav_map}"
+        if self.object_detector_artifact_path is not None:
+            self.object_detector_artifact_path.mkdir(exist_ok=True)
 
 
 class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
@@ -91,6 +116,17 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         self.robot.time_sync.wait_for_sync()
         self.localizer.localize()
 
+        # Create the object pose detector.
+        detector_2d: ObjectDetector2D = GeminiObjectDetector2D()
+        if self.scene_description.object_detector_artifact_path is not None:
+            detector_2d = RenderWrapperObjectDetector2D(
+                detector_2d, self.scene_description.object_detector_artifact_path
+            )
+        self._pose_detector = Simple2DPoseDetector6D(detector_2d)
+        self._pose_detector_object_ids = [
+            LanguageObjectDetectionID(TIGER_TOY_OBJECT.name),
+        ]
+
     def reset(
         self,
         *,
@@ -122,7 +158,10 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         return self._get_obs(), 0.0, False, False, {}
 
     def render(self) -> RenderFrame | list[RenderFrame] | None:
-        """Coming soon."""
+        """Coming soon.
+
+        Make sure to reuse the images captured in _get_obs().
+        """
         return None
 
     def _get_obs(self) -> ObjectCentricState:
@@ -135,10 +174,36 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
             "base_rot": robot_base_pose.rpy[2],
         }
 
+        # Capture images and get the object state.
+        rgbds_with_context = capture_images(self.robot, self.localizer)
+
+        # Detect objects.
+        cam_to_rgbd: dict[CameraInfo, RGBDImage] = {}
+        for camera_name, rgbd_with_context in rgbds_with_context.items():
+            fx = rgbd_with_context.camera_model.intrinsics.focal_length.x
+            fy = rgbd_with_context.camera_model.intrinsics.focal_length.y
+            cx = rgbd_with_context.camera_model.intrinsics.principal_point.x
+            cy = rgbd_with_context.camera_model.intrinsics.principal_point.y
+            cam_info = CameraInfo(
+                camera_name,
+                (fx, fy),
+                (cx, cy),
+                rgbd_with_context.depth_scale,
+                rgbd_with_context.world_tform_camera,
+            )
+            # TODO: rotate?
+            cam_to_rgbd[cam_info] = RGBDImage(
+                rgbd_with_context.rgb, rgbd_with_context.depth
+            )
+        detections = self._pose_detector.detect(
+            cam_to_rgbd, self._pose_detector_object_ids
+        )
+        import ipdb
+
+        ipdb.set_trace()
+
         # Finish the state.
-        state_dict: dict[Object, dict[str, float]] = {
-            ROBOT_OBJECT: robot_state_dict
-        }
+        state_dict: dict[Object, dict[str, float]] = {ROBOT_OBJECT: robot_state_dict}
         return create_state_from_dict(state_dict, TYPE_FEATURES)
 
     def _step_move_base(self, new_pose: Pose) -> None:
