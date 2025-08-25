@@ -46,7 +46,6 @@ class SpotRealEnvSpec:
         Path(__file__).parents[3] / "graph_nav_maps" / "prpl_fwing_test_map"
     )
     sdk_client_name: str = "SpotPlanningDemoClient"
-    map_to_world_frame_tf: SE2Pose = SE2Pose(2.287, -0.339, 1.421)
 
     def __post_init__(self) -> None:
         assert (
@@ -146,15 +145,10 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         return create_state_from_dict(state_dict, TYPE_FEATURES)
 
     def _step_move_base(self, new_pose: Pose) -> None:
-        desired_world_pose_se2 = SE2Pose(
+        desired_pose_se2 = SE2Pose(
             new_pose.position[0], new_pose.position[1], new_pose.rpy[2]
         )
-        desired_localizer_pose_se2 = (
-            self.scene_description.map_to_world_frame_tf * desired_world_pose_se2
-        )
-        navigate_to_absolute_pose(
-            self.robot, self.localizer, desired_localizer_pose_se2
-        )
+        navigate_to_absolute_pose(self.robot, self.localizer, desired_pose_se2)
 
     def _step_pick(self, object_name: str, end_effector_to_grasp_pose: Pose) -> None:
         pass
@@ -167,12 +161,9 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
 
     def _get_robot_pose(self) -> Pose:
         self.localizer.localize()
-        localizer_se3_pose = self.localizer.get_last_robot_pose()
-        localizer_se2_pose = localizer_se3_pose.get_closest_se2_transform()
-        world_se2_pose = (
-            localizer_se2_pose * self.scene_description.map_to_world_frame_tf.inverse()
-        )
+        world_se3_pose = self.localizer.get_last_robot_pose()
+        world_se2_pose = world_se3_pose.get_closest_se2_transform()
         world_pose = Pose.from_rpy(
-            (world_se2_pose.x, world_se2_pose.y, 0), (world_se2_pose.angle, 0, 0)
+            (world_se2_pose.x, world_se2_pose.y, 0), (0, 0, world_se2_pose.angle)
         )
         return world_pose

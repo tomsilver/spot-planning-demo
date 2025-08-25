@@ -17,5 +17,7 @@ class SpotSimVizWrapper(
         self._sim = SpotPyBulletSim(use_gui=True)
 
     def observation(self, observation: ObjectCentricState) -> ObjectCentricState:
+        print("Visualizing state:")
+        print(observation.pretty_str())
         self._sim.set_state(observation)
         return observation
