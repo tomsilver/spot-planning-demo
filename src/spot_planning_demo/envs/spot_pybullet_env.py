@@ -21,10 +21,10 @@ from relational_structs.utils import create_state_from_dict
 
 from spot_planning_demo.structs import (
     BANISH_POSE,
-    ROBOT_OBJECT,
-    TYPE_FEATURES,
     CARDBOARD_TABLE_OBJECT,
+    ROBOT_OBJECT,
     TIGER_TOY_OBJECT,
+    TYPE_FEATURES,
     HandOver,
     MoveBase,
     Pick,
@@ -373,11 +373,16 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
         for obj, feats in self._object_to_state_set_features.items():
             pybullet_id = self._object_to_pybullet_id[obj]
             current_sim_pose = get_pose(pybullet_id, self.physics_client_id)
-            feat_vals = list(current_sim_pose.position) + list(current_sim_pose.orientation)
+            feat_vals = list(current_sim_pose.position) + list(
+                current_sim_pose.orientation
+            )
             for feat in feats:
                 feat_idx = all_pose_feats.index(feat)
                 feat_vals[feat_idx] = state.get(obj, feat)
-            pose = Pose(tuple(feat_vals[:3]), tuple(feat_vals[3:]))
+            pose = Pose(
+                (feat_vals[0], feat_vals[1], feat_vals[2]),
+                (feat_vals[3], feat_vals[4], feat_vals[5], feat_vals[6]),
+            )
             set_pose(pybullet_id, pose, self.physics_client_id)
 
     def _get_obs(self) -> ObjectCentricState:

@@ -46,9 +46,9 @@ from spot_planning_demo.spot_utils.skills.spot_navigation import (
 from spot_planning_demo.spot_utils.spot_localization import SpotLocalizer
 from spot_planning_demo.spot_utils.utils import verify_estop
 from spot_planning_demo.structs import (
+    CARDBOARD_TABLE_OBJECT,
     ROBOT_OBJECT,
     TIGER_TOY_OBJECT,
-    CARDBOARD_TABLE_OBJECT,
     TYPE_FEATURES,
     HandOver,
     MoveBase,
