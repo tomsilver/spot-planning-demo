@@ -424,7 +424,9 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
                 raise ActionFailure("Robot in collision")
             self.robot.set_base(current_robot_base_pose)
 
-    def _step_pick(self, object_name: str, end_effector_to_grasp_pose: Pose) -> None:
+    def _step_pick(
+        self, object_name: str, end_effector_to_grasp_pose: Pose | None
+    ) -> None:
         # Can only pick if hand is empty.
         if self._current_held_object_id is not None:
             if self.raise_error_on_action_failures:
@@ -435,6 +437,7 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
         # Run inverse kinematics to determine grasp joint positions.
         object_id = self._object_name_to_id(object_name)
         target_object_pose = get_pose(object_id, self.physics_client_id)
+        assert end_effector_to_grasp_pose is not None, "TODO"
         target_end_effector_pose = multiply_poses(
             target_object_pose,
             end_effector_to_grasp_pose.invert(),

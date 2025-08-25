@@ -24,7 +24,7 @@ class Pick(SpotAction):
     """Pick an object."""
 
     object_name: str  # unique object name
-    end_effector_to_grasp_pose: Pose
+    end_effector_to_grasp_pose: Pose | None = None  # if None, robot's choice
 
 
 @dataclass(frozen=True)

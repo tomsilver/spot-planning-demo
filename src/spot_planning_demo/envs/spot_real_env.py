@@ -15,7 +15,7 @@ import gymnasium
 import numpy as np
 from bosdyn.client import create_standard_sdk
 from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
-from bosdyn.client.math_helpers import SE2Pose
+from bosdyn.client.math_helpers import SE2Pose, SE3Pose, Vec3
 from bosdyn.client.util import authenticate
 from prpl_perception_utils.object_detection_2d.base_object_detector_2d import (
     ObjectDetector2D,
@@ -40,6 +40,7 @@ from relational_structs.utils import create_state_from_dict
 from spatialmath import SE3
 
 from spot_planning_demo.spot_utils.perception.spot_cameras import capture_images
+from spot_planning_demo.spot_utils.skills.spot_hand_move import gaze_at_relative_pose, stow_arm
 from spot_planning_demo.spot_utils.skills.spot_navigation import (
     navigate_to_absolute_pose,
 )
@@ -67,6 +68,7 @@ class SpotRealEnvSpec:
     graph_nav_map: Path = (
         Path(__file__).parents[3] / "graph_nav_maps" / "prpl_fwing_test_map"
     )
+    robot_base_pose: Pose = Pose.from_rpy((2.287, -0.339, -0.33), (0, 0, 1.421))
     sdk_client_name: str = "SpotPlanningDemoClient"
 
     object_detector_artifact_path: Path | None = (
@@ -132,6 +134,8 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         ]
 
         # Track objects.
+        self._objects_to_track = {TIGER_TOY_OBJECT, CARDBOARD_TABLE_OBJECT}
+        self._object_name_to_object = {o.name: o for o in self._objects_to_track}
         self._last_known_object_poses: dict[Object, Pose] = {}
 
     def reset(
@@ -140,6 +144,12 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         seed: int | None = None,
         options: dict[str, Any] | None = None,
     ) -> tuple[ObjectCentricState, dict[str, Any]]:
+        
+        # Move to home.
+        self._step_move_base(self.scene_description.robot_base_pose)
+        
+        # Stow the arm.
+        stow_arm(self.robot)
 
         return self._get_obs(), {}
 
@@ -204,11 +214,10 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         detections = self._pose_detector.detect(
             cam_to_rgbd, self._pose_detector_object_ids
         )
-        objects_to_track = {TIGER_TOY_OBJECT, CARDBOARD_TABLE_OBJECT}
         object_to_detected_poses: dict[Object, list[Pose]] = {
-            o: [] for o in objects_to_track
+            o: [] for o in self._objects_to_track
         }
-        object_id_to_object = {o.name: o for o in objects_to_track}
+        object_id_to_object = {o.name: o for o in self._objects_to_track}
         for camera_detections in detections.values():
             for detection in camera_detections:
                 assert isinstance(detection.object_id, LanguageObjectDetectionID)
@@ -219,7 +228,7 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
                 )
                 object_to_detected_poses[obj].append(pose)
         # Average poses or use the last known pose if none are found.
-        for obj in objects_to_track:
+        for obj in self._objects_to_track:
             detected_poses = object_to_detected_poses[obj]
             if not detected_poses:
                 assert obj in self._last_known_object_poses
@@ -252,8 +261,27 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         )
         navigate_to_absolute_pose(self.robot, self.localizer, desired_pose_se2)
 
-    def _step_pick(self, object_name: str, end_effector_to_grasp_pose: Pose) -> None:
-        pass
+    def _step_pick(
+        self, object_name: str, end_effector_to_grasp_pose: Pose | None
+    ) -> None:
+
+        assert end_effector_to_grasp_pose is None, "TODO"
+
+        # Get robot pose.
+        robot_se3_pose = self.localizer.get_last_robot_pose()
+
+        # Get target pose.
+        obj = self._object_name_to_object[object_name]
+        target_pose = self._last_known_object_poses[obj]
+        target_se3_pose = SE3Pose.from_matrix(target_pose.to_matrix())
+
+        # Gaze.
+        gaze_target = Vec3(target_se3_pose.x, target_se3_pose.y, target_se3_pose.z)
+        rel_gaze_target_body = robot_se3_pose.inverse().transform_vec3(gaze_target)
+        gaze_at_relative_pose(self.robot, rel_gaze_target_body)
+
+        # Stow the arm.
+        stow_arm(self.robot)
 
     def _step_place(self, surface_name: str, pose: Pose) -> None:
         pass
