@@ -16,7 +16,8 @@ from pybullet_helpers.inverse_kinematics import (
 from pybullet_helpers.robots import create_pybullet_robot
 from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
 from pybullet_helpers.utils import create_pybullet_block
-from relational_structs import ObjectCentricState
+from relational_structs import Object, ObjectCentricState, Type
+from relational_structs.utils import create_state_from_dict
 
 from spot_planning_demo.structs import (
     BANISH_POSE,
@@ -28,6 +29,14 @@ from spot_planning_demo.structs import (
 )
 
 RenderFrame: TypeAlias = Any
+
+# Object types.
+RobotType = Type("robot")
+MovableObjectType = Type("movable_object")
+TYPE_FEATURES = {
+    RobotType: ["base_x", "base_y", "base_rot"],
+    MovableObjectType: ["x", "y", "z", "qx", "qy", "qz", "qw"],
+}
 
 
 class ActionFailure(BaseException):
@@ -250,6 +259,9 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
             self.shelf_ceiling_id,
         }
 
+        # Create constant objects for object-centric state.
+        self._robot_object = Object("spot", RobotType)
+
     def reset(
         self,
         *,
@@ -319,8 +331,38 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
         """Coming soon."""
         return None
 
+    def set_state(self, state: ObjectCentricState) -> None:
+        """Sync the simulation to the given state."""
+        # Set the robot state.
+        default_robot_base_pose = self.robot.get_base_pose()
+        robot_base_x = state.get(self._robot_object, "base_x")
+        robot_base_y = state.get(self._robot_object, "base_y")
+        robot_base_rot = state.get(self._robot_object, "base_rot")
+        new_robot_base_pose = Pose.from_rpy(
+            (robot_base_x, robot_base_y, default_robot_base_pose.position[2]),
+            (
+                default_robot_base_pose.rpy[0],
+                default_robot_base_pose.rpy[1],
+                robot_base_rot,
+            ),
+        )
+        self.robot.set_base(new_robot_base_pose)
+
     def _get_obs(self) -> ObjectCentricState:
-        return ObjectCentricState({}, {})
+
+        # Get the robot state.
+        robot_base_pose = self.robot.get_base_pose()
+        robot_state_dict = {
+            "base_x": robot_base_pose.position[0],
+            "base_y": robot_base_pose.position[1],
+            "base_rot": robot_base_pose.rpy[2],
+        }
+
+        # Finish the state.
+        state_dict: dict[Object, dict[str, float]] = {
+            self._robot_object: robot_state_dict
+        }
+        return create_state_from_dict(state_dict, TYPE_FEATURES)
 
     def _step_move_base(self, new_pose: Pose) -> None:
         # Store the current robot pose in case we need to change it back.
