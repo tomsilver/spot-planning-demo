@@ -39,6 +39,7 @@ from spot_planning_demo.spot_utils.perception.spot_cameras import capture_images
 from spot_planning_demo.spot_utils.skills.spot_grasp import grasp_at_pixel
 from spot_planning_demo.spot_utils.skills.spot_hand_move import (
     gaze_at_relative_pose,
+    open_gripper,
     stow_arm,
 )
 from spot_planning_demo.spot_utils.skills.spot_navigation import (
@@ -48,10 +49,10 @@ from spot_planning_demo.spot_utils.spot_localization import SpotLocalizer
 from spot_planning_demo.spot_utils.utils import initialize_robot_with_lease
 from spot_planning_demo.structs import (
     CARDBOARD_TABLE_OBJECT,
+    HUMAN_OBJECT,
     ROBOT_OBJECT,
     TIGER_TOY_OBJECT,
     TYPE_FEATURES,
-    HUMAN_OBJECT,
     HandOver,
     MoveBase,
     Pick,
@@ -113,7 +114,11 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         self.localizer.localize()
 
         # Track objects.
-        self._objects_to_track = {TIGER_TOY_OBJECT, CARDBOARD_TABLE_OBJECT, HUMAN_OBJECT}
+        self._objects_to_track = {
+            TIGER_TOY_OBJECT,
+            CARDBOARD_TABLE_OBJECT,
+            HUMAN_OBJECT,
+        }
         self._object_name_to_object = {o.name: o for o in self._objects_to_track}
         self._last_known_object_poses: dict[Object, Pose] = {}
 
@@ -131,7 +136,6 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         self._object_name_to_perception_id = {
             o.language_id: o for o in self._perception_object_ids
         }
-
 
     def reset(
         self,
@@ -162,7 +166,7 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
             self._step_place(action.surface_name, action.placement_pose)
 
         elif isinstance(action, HandOver):
-            self._step_hand_over(action.pose)
+            self._step_hand_over()
 
         else:
             raise NotImplementedError
@@ -305,8 +309,10 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
     def _step_place(self, surface_name: str, pose: Pose) -> None:
         pass
 
-    def _step_hand_over(self, pose: Pose) -> None:
-        pass
+    def _step_hand_over(self) -> None:
+        # Open the gripper.
+        open_gripper(self.robot)
+        # Later, do something else too.
 
     def _get_robot_pose(self) -> Pose:
         self.localizer.localize()

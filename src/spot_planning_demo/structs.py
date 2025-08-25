@@ -37,9 +37,7 @@ class Place(SpotAction):
 
 @dataclass(frozen=True)
 class HandOver(SpotAction):
-    """Pick an object."""
-
-    pose: Pose  # absolute pose in world frame
+    """Hand over an object."""
 
 
 # Object types.

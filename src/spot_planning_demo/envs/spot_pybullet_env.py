@@ -22,6 +22,7 @@ from relational_structs.utils import create_state_from_dict
 from spot_planning_demo.structs import (
     BANISH_POSE,
     CARDBOARD_TABLE_OBJECT,
+    HUMAN_OBJECT,
     ROBOT_OBJECT,
     TIGER_TOY_OBJECT,
     TYPE_FEATURES,
@@ -274,6 +275,7 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
         self._object_to_pybullet_id = {
             TIGER_TOY_OBJECT: self.purple_block_id,
             CARDBOARD_TABLE_OBJECT: self.table_id,
+            HUMAN_OBJECT: self.drop_zone_id,
         }
 
         # Indicate which features should update for which objects when the state is
@@ -281,6 +283,7 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
         self._object_to_state_set_features = {
             TIGER_TOY_OBJECT: ["x", "y", "z"],
             CARDBOARD_TABLE_OBJECT: ["x", "y"],
+            HUMAN_OBJECT: ["x", "y"],
         }
 
     def reset(
@@ -328,7 +331,7 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
             self._step_place(action.surface_name, action.placement_pose)
 
         elif isinstance(action, HandOver):
-            self._step_hand_over(action.pose)
+            self._step_hand_over()
 
         else:
             raise NotImplementedError
@@ -491,22 +494,12 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
         self._current_held_object_id = None
         self._current_held_object_transform = None
 
-    def _step_hand_over(self, pose: Pose) -> None:
+    def _step_hand_over(self) -> None:
         # Need to be holding something for handover to be possible.
         if self._current_held_object_id is None:
             if self.raise_error_on_action_failures:
                 raise ActionFailure("Cannot hand over when hand is empty")
             return
-        # Check reachability. The pose is in the object space, so transform to ee.
-        assert self._current_held_object_transform is not None
-        target_end_effector_pose = multiply_poses(
-            pose,
-            self._current_held_object_transform.invert(),
-        )
-        self._step_reach_end_effector_pose(
-            target_end_effector_pose,
-            collision_ignore_ids={self._current_held_object_id},
-        )
         # Hand over succeeds.
         set_pose(self._current_held_object_id, BANISH_POSE, self.physics_client_id)
         self._current_held_object_id = None
