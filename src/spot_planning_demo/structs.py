@@ -46,13 +46,16 @@ class HandOver(SpotAction):
 RobotType = Type("robot")
 MovableObjectType = Type("movable_object")
 ImmovableObjectType = Type("immovable_object")
+HumanObjectType = Type("human")
 TYPE_FEATURES = {
     RobotType: ["base_x", "base_y", "base_rot"],
     MovableObjectType: ["x", "y", "z", "qx", "qy", "qz", "qw"],
     ImmovableObjectType: ["x", "y", "z", "qx", "qy", "qz", "qw"],
+    HumanObjectType: ["x", "y", "z", "qx", "qy", "qz", "qw"],
 }
 
 # Constant objects.
 ROBOT_OBJECT = Object("spot", RobotType)
 TIGER_TOY_OBJECT = Object("stuffed animal toy tiger", MovableObjectType)
 CARDBOARD_TABLE_OBJECT = Object("small cardboard box on the floor", MovableObjectType)
+HUMAN_OBJECT = Object("person sitting at their computer", HumanObjectType)

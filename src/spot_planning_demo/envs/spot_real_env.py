@@ -51,6 +51,7 @@ from spot_planning_demo.structs import (
     ROBOT_OBJECT,
     TIGER_TOY_OBJECT,
     TYPE_FEATURES,
+    HUMAN_OBJECT,
     HandOver,
     MoveBase,
     Pick,
@@ -111,6 +112,11 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         )
         self.localizer.localize()
 
+        # Track objects.
+        self._objects_to_track = {TIGER_TOY_OBJECT, CARDBOARD_TABLE_OBJECT, HUMAN_OBJECT}
+        self._object_name_to_object = {o.name: o for o in self._objects_to_track}
+        self._last_known_object_poses: dict[Object, Pose] = {}
+
         # Create the object pose detector.
         self._object_detector: ObjectDetector2D = GeminiObjectDetector2D()
         if self.scene_description.object_detector_artifact_path is not None:
@@ -120,17 +126,12 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
             )
         self._pose_detector = Simple2DPoseDetector6D(self._object_detector)
         self._perception_object_ids = [
-            LanguageObjectDetectionID(TIGER_TOY_OBJECT.name),
-            LanguageObjectDetectionID(CARDBOARD_TABLE_OBJECT.name),
+            LanguageObjectDetectionID(o.name) for o in self._objects_to_track
         ]
         self._object_name_to_perception_id = {
             o.language_id: o for o in self._perception_object_ids
         }
 
-        # Track objects.
-        self._objects_to_track = {TIGER_TOY_OBJECT, CARDBOARD_TABLE_OBJECT}
-        self._object_name_to_object = {o.name: o for o in self._objects_to_track}
-        self._last_known_object_poses: dict[Object, Pose] = {}
 
     def reset(
         self,
