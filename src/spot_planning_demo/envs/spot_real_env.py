@@ -6,17 +6,13 @@ NOTE: the origin (0, 0, 0) is Spot facing towards the table, and:
     - +z is facing up
 """
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, SupportsFloat, TypeAlias
 
 import gymnasium
 import numpy as np
-from bosdyn.client import create_standard_sdk
-from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
 from bosdyn.client.math_helpers import SE2Pose, SE3Pose, Vec3
-from bosdyn.client.util import authenticate
 from prpl_perception_utils.object_detection_2d.base_object_detector_2d import (
     ObjectDetector2D,
 )
@@ -40,13 +36,16 @@ from relational_structs.utils import create_state_from_dict
 from spatialmath import SE3
 
 from spot_planning_demo.spot_utils.perception.spot_cameras import capture_images
-from spot_planning_demo.spot_utils.skills.spot_hand_move import gaze_at_relative_pose, stow_arm
 from spot_planning_demo.spot_utils.skills.spot_grasp import grasp_at_pixel
+from spot_planning_demo.spot_utils.skills.spot_hand_move import (
+    gaze_at_relative_pose,
+    stow_arm,
+)
 from spot_planning_demo.spot_utils.skills.spot_navigation import (
     navigate_to_absolute_pose,
 )
 from spot_planning_demo.spot_utils.spot_localization import SpotLocalizer
-from spot_planning_demo.spot_utils.utils import verify_estop
+from spot_planning_demo.spot_utils.utils import initialize_robot_with_lease
 from spot_planning_demo.structs import (
     CARDBOARD_TABLE_OBJECT,
     ROBOT_OBJECT,
@@ -99,17 +98,8 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         self.scene_description = scene_description
 
         # Create the interface to the spot robot.
-        sdk = create_standard_sdk(self.scene_description.sdk_client_name)
-        if "BOSDYN_IP" not in os.environ:
-            raise KeyError("BOSDYN_IP not found in os.environ")
-        hostname = os.environ.get("BOSDYN_IP")
-        self.robot = sdk.create_robot(hostname)
-        authenticate(self.robot)
-        verify_estop(self.robot)
-        lease_client = self.robot.ensure_client(LeaseClient.default_service_name)
-        lease_client.take()
-        lease_keepalive = LeaseKeepAlive(
-            lease_client, must_acquire=True, return_at_exit=True
+        self.robot, lease_client, lease_keepalive = initialize_robot_with_lease(
+            client_name=self.scene_description.sdk_client_name
         )
 
         # Create the localizer.
@@ -119,21 +109,23 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
             lease_client,
             lease_keepalive,
         )
-        self.robot.time_sync.wait_for_sync()
         self.localizer.localize()
 
         # Create the object pose detector.
         self._object_detector: ObjectDetector2D = GeminiObjectDetector2D()
         if self.scene_description.object_detector_artifact_path is not None:
             self._object_detector = RenderWrapperObjectDetector2D(
-                self._object_detector, self.scene_description.object_detector_artifact_path
+                self._object_detector,
+                self.scene_description.object_detector_artifact_path,
             )
         self._pose_detector = Simple2DPoseDetector6D(self._object_detector)
         self._perception_object_ids = [
             LanguageObjectDetectionID(TIGER_TOY_OBJECT.name),
             LanguageObjectDetectionID(CARDBOARD_TABLE_OBJECT.name),
         ]
-        self._object_name_to_perception_id = {o.language_id: o for o in self._perception_object_ids}
+        self._object_name_to_perception_id = {
+            o.language_id: o for o in self._perception_object_ids
+        }
 
         # Track objects.
         self._objects_to_track = {TIGER_TOY_OBJECT, CARDBOARD_TABLE_OBJECT}
@@ -146,13 +138,13 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
         seed: int | None = None,
         options: dict[str, Any] | None = None,
     ) -> tuple[ObjectCentricState, dict[str, Any]]:
-        
+
         # Stow the arm.
         stow_arm(self.robot)
 
         # Move to home.
         self._step_move_base(self.scene_description.robot_base_pose)
-        
+
         return self._get_obs(), {}
 
     def step(
@@ -284,7 +276,9 @@ class SpotRealEnv(gymnasium.Env[ObjectCentricState, SpotAction]):
 
         # Take a new hand camera image.
         hand_camera_name = "hand_color_image"
-        rgbds = capture_images(self.robot, self.localizer, camera_names=[hand_camera_name])
+        rgbds = capture_images(
+            self.robot, self.localizer, camera_names=[hand_camera_name]
+        )
         rgbd = rgbds[hand_camera_name]
         rgb = rgbd.rgb
 

@@ -1,6 +1,7 @@
 """Small utility functions for spot."""
 
 import io
+import os
 import sys
 from pathlib import Path
 from typing import Optional, Tuple
@@ -9,11 +10,13 @@ import cv2
 import numpy as np
 import requests
 from bosdyn.api import estop_pb2, robot_state_pb2
-from bosdyn.client import math_helpers
+from bosdyn.client import create_standard_sdk, math_helpers
 from bosdyn.client.estop import EstopClient
 from bosdyn.client.exceptions import ProxyConnectionError, TimedOutError
+from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client.sdk import Robot
+from bosdyn.client.util import authenticate
 from numpy.typing import NDArray
 
 # Pose for the hand (relative to the body) that looks down in front.
@@ -64,6 +67,26 @@ def verify_estop(robot: Robot) -> None:
         )
         robot.logger.error(error_message)
         raise Exception(error_message)
+
+
+def initialize_robot_with_lease(
+    client_name: str = "DefaultClient",
+) -> tuple[Robot, LeaseClient, LeaseKeepAlive]:
+    """Standard flow for creating an interface to the robot."""
+    sdk = create_standard_sdk(client_name)
+    if "BOSDYN_IP" not in os.environ:
+        raise KeyError("BOSDYN_IP not found in os.environ")
+    hostname = os.environ.get("BOSDYN_IP")
+    robot = sdk.create_robot(hostname)
+    authenticate(robot)
+    verify_estop(robot)
+    lease_client = robot.ensure_client(LeaseClient.default_service_name)
+    lease_client.take()
+    lease_keepalive = LeaseKeepAlive(
+        lease_client, must_acquire=True, return_at_exit=True
+    )
+    robot.time_sync.wait_for_sync()
+    return robot, lease_client, lease_keepalive
 
 
 def get_pixel_from_user(rgb: NDArray[np.uint8]) -> Tuple[int, int]:
