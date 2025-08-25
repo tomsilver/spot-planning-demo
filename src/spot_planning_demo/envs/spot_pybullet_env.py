@@ -16,6 +16,7 @@ from pybullet_helpers.inverse_kinematics import (
 from pybullet_helpers.robots import create_pybullet_robot
 from pybullet_helpers.robots.single_arm import FingeredSingleArmPyBulletRobot
 from pybullet_helpers.utils import create_pybullet_block
+from relational_structs import ObjectCentricState
 
 from spot_planning_demo.structs import (
     BANISH_POSE,
@@ -26,7 +27,6 @@ from spot_planning_demo.structs import (
     SpotAction,
 )
 
-ObsType: TypeAlias = Any  # coming soon
 RenderFrame: TypeAlias = Any
 
 
@@ -134,7 +134,7 @@ class SpotPybulletSimSpec:
         }
 
 
-class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
+class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
     """PyBullet simulator for Spot demo environment."""
 
     metadata = {"render_modes": ["rgb_array"], "render_fps": 1}
@@ -255,7 +255,7 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         *,
         seed: int | None = None,
         options: dict[str, Any] | None = None,
-    ) -> tuple[ObsType, dict[str, Any]]:
+    ) -> tuple[ObjectCentricState, dict[str, Any]]:
 
         # Reset the robot.
         self.robot.set_base(self.scene_description.robot_base_pose)
@@ -279,11 +279,11 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
         self._current_held_object_id = None
         self._current_held_object_transform = None
 
-        return None, {}
+        return self._get_obs(), {}
 
     def step(
         self, action: SpotAction
-    ) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
+    ) -> tuple[ObjectCentricState, SupportsFloat, bool, bool, dict[str, Any]]:
 
         if isinstance(action, MoveBase):
             self._step_move_base(action.pose)
@@ -313,11 +313,14 @@ class SpotPyBulletSim(gymnasium.Env[ObsType, SpotAction]):
                 self.physics_client_id,
             )
 
-        return None, 0.0, False, False, {}
+        return self._get_obs(), 0.0, False, False, {}
 
     def render(self) -> RenderFrame | list[RenderFrame] | None:
         """Coming soon."""
         return None
+
+    def _get_obs(self) -> ObjectCentricState:
+        return ObjectCentricState({}, {})
 
     def _step_move_base(self, new_pose: Pose) -> None:
         # Store the current robot pose in case we need to change it back.

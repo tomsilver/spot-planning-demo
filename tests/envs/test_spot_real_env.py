@@ -7,6 +7,7 @@ import pytest
 from pybullet_helpers.geometry import Pose
 
 from spot_planning_demo.envs.spot_real_env import SpotRealEnv
+from spot_planning_demo.envs.spot_sim_viz_wrapper import SpotSimVizWrapper
 from spot_planning_demo.structs import MoveBase
 
 runreal = pytest.mark.skipif("not config.getoption('runreal')")
@@ -17,6 +18,9 @@ def test_spot_pybullet_move_base():
     """Tests for MoveBase()."""
     env = SpotRealEnv()
     env.reset(seed=123)
+
+    # Create a GUI visualizer.
+    env = SpotSimVizWrapper(env)
 
     # Moving to the origin should be possible.
     move_to_origin = MoveBase(Pose.identity())
