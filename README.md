@@ -2,6 +2,20 @@
 
 ![workflow](https://github.com/tomsilver/spot-planning-demo/actions/workflows/ci.yml/badge.svg)
 
+## Basic Simulation Example
+
+First clone and install this repository:
+```bash
+git clone git@github.com:tomsilver/spot-planning-demo.git
+cd spot-planning-demo
+pip install -e .[develop]
+```
+
+Then run the basic simulation example:
+```bash
+python examples/basic_simulation.py
+```
+
 ## Real Spot Robot Setup Instructions
 
 ### Hardware Notes
