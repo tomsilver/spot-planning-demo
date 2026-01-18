@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, SupportsFloat, TypeAlias
 
 import gymnasium
+import numpy as np
 import pybullet as p
 from pybullet_helpers.geometry import Pose, get_pose, multiply_poses, set_pose
 from pybullet_helpers.gui import create_gui_connection
@@ -58,9 +59,9 @@ class SpotPybulletSimSpec:
         )
     )
 
-    # Table.
-    table_half_extents: tuple[float, float, float] = (0.2, 0.1, 0.05)
-    table_pose: Pose = Pose((2.3, 0.7, floor_pose.position[2] + table_half_extents[2]))
+    # Table. Thin table positioned where the robot arm can reach.
+    table_half_extents: tuple[float, float, float] = (0.15, 0.15, 0.005)
+    table_pose: Pose = Pose((2.55, 0.1, 0.38))
     table_color: tuple[float, float, float, float] = (0.6, 0.3, 0.1, 1.0)
 
     # Shelf ceiling, forcing a side grasp and possibly forcing removal of obstacles.
@@ -82,15 +83,14 @@ class SpotPybulletSimSpec:
     )
     shelf_ceiling_color: tuple[float, float, float, float] = (0.6, 0.3, 0.1, 0.5)
 
-    # Purple block.
-    purple_block_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.05)
+    # Purple block. On the table surface. Small size for easier grasping.
+    purple_block_half_extents: tuple[float, float, float] = (0.02, 0.02, 0.03)
+    _table_surface_z: float = table_pose.position[2] + table_half_extents[2]
     purple_block_init_pose: Pose = Pose(
         (
-            table_pose.position[0] - table_half_extents[0] / 2,
-            table_pose.position[1] - table_half_extents[1] / 2,
-            table_pose.position[2]
-            + table_half_extents[2]
-            + purple_block_half_extents[2],
+            table_pose.position[0] - table_half_extents[0] + 0.03,
+            table_pose.position[1] - table_half_extents[1] + 0.03,
+            _table_surface_z + purple_block_half_extents[2],
         )
     )
     purple_block_color: tuple[float, float, float, float] = (
@@ -100,18 +100,15 @@ class SpotPybulletSimSpec:
         1.0,
     )
 
-    # Green block.
-    # This is currently disabled (banish pose).
+    # Green block. Currently disabled (banish pose).
     green_block_half_extents: tuple[float, float, float] = (0.025, 0.025, 0.05)
     green_block_init_pose: Pose = BANISH_POSE
-    # Comment this back to make it active again.
+    # Uncomment to enable:
     # green_block_init_pose: Pose = Pose(
     #     (
     #         table_pose.position[0] - table_half_extents[0] / 2,
     #         table_pose.position[1] + table_half_extents[1] / 2,
-    #         table_pose.position[2]
-    #         + table_half_extents[2]
-    #         + green_block_half_extents[2],
+    #         _table_surface_z + green_block_half_extents[2],
     #     )
     # )
     green_block_color: tuple[float, float, float, float] = (
@@ -145,7 +142,7 @@ class SpotPybulletSimSpec:
                 self.robot_base_pose.position[1],
                 self.robot_base_pose.position[2] + 0.5,
             ),
-            "camera_yaw": 90,
+            "camera_yaw": 180,
             "camera_distance": 1.5,
             "camera_pitch": -20,
             "background_rgb": (255, 255, 255),
@@ -263,11 +260,11 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
         self._current_held_object_id: int | None = None
         self._current_held_object_transform: Pose | None = None
 
-        # Designate obstacles.
+        # Designate obstacles for collision checking.
+        # Note: table is excluded to allow arm to reach objects on it.
         self.obstacle_ids = {
             self.purple_block_id,
             self.green_block_id,
-            self.table_id,
             self.shelf_ceiling_id,
         }
 
@@ -440,14 +437,17 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
         # Run inverse kinematics to determine grasp joint positions.
         object_id = self._object_name_to_id(object_name)
         target_object_pose = get_pose(object_id, self.physics_client_id)
-        assert end_effector_to_grasp_pose is not None, "TODO"
+        # Auto-compute grasp pose if not provided (top-down grasp).
+        if end_effector_to_grasp_pose is None:
+            end_effector_to_grasp_pose = self._compute_top_down_grasp_pose(object_name)
         target_end_effector_pose = multiply_poses(
             target_object_pose,
             end_effector_to_grasp_pose.invert(),
         )
-        self._step_reach_end_effector_pose(
+        if not self._step_reach_end_effector_pose(
             target_end_effector_pose, collision_ignore_ids={object_id}
-        )
+        ):
+            return
         # Pick succeeds.
         self._current_held_object_id = object_id
         self._current_held_object_transform = end_effector_to_grasp_pose
@@ -459,15 +459,15 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
                 raise ActionFailure("Cannot place when hand is empty")
             return
         assert self._current_held_object_transform is not None
-        assert self._current_held_object_transform is not None
         target_end_effector_pose = multiply_poses(
             pose,
             self._current_held_object_transform.invert(),
         )
-        self._step_reach_end_effector_pose(
+        if not self._step_reach_end_effector_pose(
             target_end_effector_pose,
             collision_ignore_ids={self._current_held_object_id},
-        )
+        ):
+            return
         # Tentatively set the object and measure distance to surface.
         current_held_object_pose = get_pose(
             self._current_held_object_id, self.physics_client_id
@@ -507,22 +507,18 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
 
     def _step_reach_end_effector_pose(
         self, target_end_effector_pose: Pose, collision_ignore_ids: set[int]
-    ) -> None:
+    ) -> bool:
+        """Attempt to reach end effector pose.
+
+        Returns True on success.
+        """
         current_robot_joints = self.robot.get_joint_positions()
         try:
             robot_joints = inverse_kinematics(self.robot, target_end_effector_pose)
         except InverseKinematicsError:
             if self.raise_error_on_action_failures:
-
-                # Uncomment to debug.
-                # from pybullet_helpers.gui import visualize_pose
-                # current_ee = self.robot.get_end_effector_pose()
-                # visualize_pose(current_ee, self.physics_client_id)
-                # visualize_pose(target_end_effector_pose, self.physics_client_id)
-                # while True:
-                #     p.getMouseEvents(self.physics_client_id)
-
                 raise ActionFailure("Cannot reach target")
+            return False
         # Check for collisions.
         set_robot_joints_with_held_object(
             self.robot,
@@ -532,17 +528,17 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
             robot_joints,
         )
         if self._collision_exists(ignore_ids=collision_ignore_ids):
+            # Reset to original before returning.
+            set_robot_joints_with_held_object(
+                self.robot,
+                self.physics_client_id,
+                self._current_held_object_id,
+                self._current_held_object_transform,
+                current_robot_joints,
+            )
             if self.raise_error_on_action_failures:
-
-                # Uncomment to debug.
-                # from pybullet_helpers.gui import visualize_pose
-                # current_ee = self.robot.get_end_effector_pose()
-                # visualize_pose(current_ee, self.physics_client_id)
-                # visualize_pose(target_end_effector_pose, self.physics_client_id)
-                # while True:
-                #     p.getMouseEvents(self.physics_client_id)
-
                 raise ActionFailure("End effector would collide when reaching")
+            return False
         # Reset to original.
         set_robot_joints_with_held_object(
             self.robot,
@@ -551,6 +547,28 @@ class SpotPyBulletSim(gymnasium.Env[ObjectCentricState, SpotAction]):
             self._current_held_object_transform,
             current_robot_joints,
         )
+        return True
+
+    def _compute_top_down_grasp_pose(self, object_name: str) -> Pose:
+        """Compute a top-down grasp pose for the given object.
+
+        Returns the pose of the object relative to the end effector frame.
+        """
+        # Get object half extents to determine grasp offset.
+        if object_name == "purple block":
+            half_extents = self.scene_description.purple_block_half_extents
+        elif object_name == "green block":
+            half_extents = self.scene_description.green_block_half_extents
+        else:
+            # Default small offset for unknown objects.
+            half_extents = (0.025, 0.025, 0.05)
+        # Grasp from above: object is below the gripper (negative z in EE frame).
+        # Add small offset above the object's top surface.
+        grasp_offset_z = half_extents[2] + 0.02
+        # The gripper points along its x-axis, so for a top-down grasp we need
+        # to rotate so the gripper x-axis points down (world -z).
+        # This is a 90-degree rotation about the y-axis.
+        return Pose.from_rpy((0, 0, -grasp_offset_z), (0, np.pi / 2, 0))
 
     def _object_name_to_id(self, name: str) -> int:
         if name == "purple block":
